@@ -5,6 +5,13 @@
     Script scans Active Directory domain for accounts (user or/and computer) where the attribute "lastLogontimestamp" have value older than current date minus specified number of days. Founded accounts can be disabled and moved to specified AD container.
 .VERSION
     1.1
+.WHATS NEW
+    1.1
+        [+] Added switch "ExtendedReport" - for display when an user account was expired
+    1.2 
+        [+] Added parameters "ExcludeComputersGroup" and "ExcludeUsersGroup". Members of these groups will be excluded from processing.
+        [*] Fixed sorting in a report
+        [*] Fixed account type in a report for user accounts
 .PARAMETER Domain
     Active Directory domain name
 .PARAMETER MaxInactiveDays
@@ -37,6 +44,10 @@
     Accounts meet with the described criteria will be disabled.
 .PARAMETER MoveAccounts
     Accounts meet with the described criteria will be moved. Users' accounts will be moved to path, specified by DisabledUsersPath parameter. Computers' accounts will be moved to path, specified by DisabledComputersPath parameter.
+.PARAMETER ExcludeComputersGroup
+    Accounts of computers which are members of this group will be excluded from processing (won't be disabled in any case)
+.PARAMETER ExcludeUsersGroup
+    Accounts of users which are members of this group will be excluded from processing (won't be disabled in any case)
 .PARAMETER ExtendedReport
     Show an additional information about accounts
 .PARAMETER Verbose
@@ -75,7 +86,9 @@ param(
     [string]$ExportReportPath = '',
     [string]$LogFile = "$($env:TEMP)\DisableInactiveADAccounts.log",
     [switch]$WhatIf,
-    [switch]$ExtendedReport
+    [switch]$ExtendedReport,
+    [string]$ExcludeComputersGroup = '',
+    [string]$ExcludeUsersGroup = ''
 )
 
 function Write-Log {
@@ -102,7 +115,7 @@ function FormatResults ($Inp){
 #>
     [PSObject[]]$Result = $null
     foreach ($I in $Inp) {
-        if ($_.ObjectClass -eq 'user') {
+        if ($I.ObjectClass -eq 'user') {
             $Enabled = (Get-ADUser $I.SamAccountName -Server $Domain).Enabled
         } elseif ($I.ObjectClass -eq 'computer') {
             $Enabled = (Get-ADComputer $I.SamAccountName -Server $Domain).Enabled
@@ -135,12 +148,35 @@ function FormatResults ($Inp){
         }
         $Result += New-Object –TypeName PSObject –Prop $Properties
     }
-    $Result | sort ObjectClass, DaysAgo
+    $Result | sort Class, DaysAgo
+}
+
+function ListExceptions ( $ADGroupName ) {
+    $Result = @()
+    try {
+        if (![string]::IsNullOrEmpty($ADGroupName)) { $Result += (Get-ADGroup $ADGroupName -ErrorAction Stop | Get-ADGroupMember).SamAccountName }
+    } catch {
+        Write-Log "ERROR: $($Error[0].Exception.Message)"
+        Write-Log "!!! Script stopped with error !!!"
+        Exit
+    }
+    $Result
 }
 
 #if ($Verbose) {$VerbosePreference = 'Continue'}
 #if ($Debug) {$DebugPreference = 'Continue'}
-$strWhatIfMode = "*** WhatIf mode ***" 
+
+$strWhatIfMode = "*** WhatIf mode ***"
+$ExcludeComps = ListExceptions $ExcludeComputersGroup
+$ExcludeUsers = ListExceptions $ExcludeUsersGroup
+if ($ProcessComputers -and $ExcludeComps.Count -gt 0) {
+    Write-Log 'Computes which are listed below will be excluded from processing:'
+    $ExcludeComps | %{ Write-Log "`t- $_"}
+}
+if ($ProcessUsers -and $ExcludeUsers.Count -gt 0) {
+    Write-Log 'Users which are listed below will be excluded from processing:'
+    $ExcludeUsers | %{ Write-Log "`t- $_"}
+}
 $CurrDate = Get-Date
 $MaxAge = ($CurrDate).AddDays(-$MaxInactiveDays)
 $Accounts = New-Object System.Collections.ArrayList
@@ -148,13 +184,21 @@ Write-Debug "Log file path: $($LogFile)"
 Write-Log "*** Script started ***"
 if ($WhatIf) {Write-Log $strWhatIfMode}
 Write-Log "Procesing domain $Domain"
+$SkippedUsers = New-Object System.Collections.ArrayList
+$SkippedComps = New-Object System.Collections.ArrayList
+
 if ($ProcessUsers) {
     Write-Log "DisableUsers switch is set"
     Get-ADUser -Filter {LastLogonTimeStamp -lt $MaxAge -and Enabled -eq $true} -Server $Domain -Properties lastLogontimestamp, accountExpires -SearchBase $UsersSearchBase | # ?{($_.lastLogontimestamp -ne $null) -and ([datetime]::FromFileTime($_.lastLogontimestamp) -lt $MaxAge ) } | 
         %{
             Write-Debug "$($_.name)`tlastLogontimestamp: $([datetime]::FromFileTime($_.lastLogontimestamp))`tMaxAge: $MaxAge"
-            Write-Log "Found:`t$($_.DistinguishedName)"
-            $Accounts.Add($_) | Out-Null
+            if ($_.SamAccountName -in $ExcludeUsers) {
+                Write-Log "[-] Skipped user:`t$($_.DistinguishedName)"
+                $SkippedUsers.Add($_) | Out-Null
+            } else {
+                Write-Log "[+] Found user:`t$($_.DistinguishedName)"
+                $Accounts.Add($_) | Out-Null
+            }
         }      
 }
 
@@ -163,8 +207,13 @@ if ($ProcessComputers) {
     Get-ADComputer -Filter {LastLogonTimeStamp -lt $MaxAge -and Enabled -eq $true} -Server $Domain -Properties lastLogontimestamp -SearchBase $ComputersSearchBase | # ?{($_.lastLogontimestamp -ne $null) -and ([datetime]::FromFileTime($_.lastLogontimestamp) -lt $MaxAge ) } | 
         %{
             Write-Debug "$($_.name)`tlastLogontimestamp: $([datetime]::FromFileTime($_.lastLogontimestamp))`tMaxAge: $MaxAge"
-            Write-Log "Found:`t$($_.DistinguishedName)"
-            $Accounts.Add($_) | Out-Null
+            if ($_.SamAccountName -in $ExcludeComps) {
+                Write-Log "[-] Skipped comp:`t$($_.DistinguishedName)"
+                $SkippedComps.Add($_) | Out-Null
+            } else {
+                Write-Log "[+] Found comp:`t$($_.DistinguishedName)"
+                $Accounts.Add($_) | Out-Null
+            }
         }      
 }
 
@@ -215,9 +264,19 @@ TD{border-width: 1px;padding: 5px;border-style: solid;border-color: black;}
             $ReportHead += "<h3>$strWhatIfMode</h3>"
         }
         [string]$MailBody = FormatResults $AccountsProcessed | ConvertTo-Html -Head $ReportHead
+        
+        if ($SkippedComps.Count -gt 0) {
+            $MailBody += FormatResults $SkippedComps | ConvertTo-Html -Head '<p><h2><font color="blue">There are skipped computers:</font></h2>'
+        }
+
+        if ($SkippedUsers.Count -gt 0) {
+            $MailBody += FormatResults $SkippedUsers | ConvertTo-Html -Head '<p><h2><font color="blue">There are skipped users:</font></h2>'
+        }
+
         if ($AccountsErrors.Count -gt 0) {
             $MailBody += FormatResults $AccountsErrors | ConvertTo-Html -Head '<p><h2><font color="red">There were errors while processing:</font></h2>'
         }
+
     } else {
         $MailBody = "<font color=`"green`">Inactive for $MaxInactiveDays accounts not found.</font>"
     }
