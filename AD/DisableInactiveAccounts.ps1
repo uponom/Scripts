@@ -46,8 +46,10 @@
     Accounts meet with the described criteria will be moved. Users' accounts will be moved to path, specified by DisabledUsersPath parameter. Computers' accounts will be moved to path, specified by DisabledComputersPath parameter.
 .PARAMETER ExcludeComputersGroup
     Accounts of computers which are members of this group will be excluded from processing (won't be disabled in any case)
+    NOTE: No nested groups allowed!
 .PARAMETER ExcludeUsersGroup
     Accounts of users which are members of this group will be excluded from processing (won't be disabled in any case)
+    NOTE: No nested groups allowed!
 .PARAMETER ExtendedReport
     Show an additional information about accounts
 .PARAMETER Verbose
