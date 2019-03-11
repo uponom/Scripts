@@ -4,14 +4,14 @@
 .DESCRIPTION
     Script scans Active Directory domain for accounts (user or/and computer) where the attribute "lastLogontimestamp" have value older than current date minus specified number of days. Founded accounts can be disabled and moved to specified AD container.
 .VERSION
-    1.1
+    1.2
 .WHATS NEW
-    1.1
-        [+] Added switch "ExtendedReport" - for display when an user account was expired
     1.2 
         [+] Added parameters "ExcludeComputersGroup" and "ExcludeUsersGroup". Members of these groups will be excluded from processing.
         [*] Fixed sorting in a report
         [*] Fixed account type in a report for user accounts
+    1.1
+        [+] Added switch "ExtendedReport" - for display when an user account was expired
 .PARAMETER Domain
     Active Directory domain name
 .PARAMETER MaxInactiveDays
@@ -60,10 +60,10 @@
     Enable read-only mode
 .EXAMPLE
     DisableInactiveAccounts.ps1 -Domain "contoso.local" -MaxInactiveDays 60 -ProcessUsers -UsersSearchBase "OU=CompanyUsers,DC=contoso,DC=local" -DisableAccounts
-    Script will scan users' accounts in OU "CompanyUsers" and disable acconts which inactive more then 60 day
+    Script will scan users' accounts in OU "CompanyUsers" and disable acconts which are inactive more then 60 day
 .EXAMPLE
     DisableInactiveAccounts.ps1 -Domain "contoso.local" -MaxInactiveDays 90 -ProcessUsers -UsersSearchBase "OU=CompanyUsers,DC=contoso,DC=local" -DisabledUsersPath "OU=DisabledUsers,DC=contoso,DC=local" -ProcessComputers -ComputersSearchBase "OU=CompanyComputers,DC=contoso,DC=local" -DisabledComputersPath "OU=DisabledComputers,DC=contoso,DC=local" -DisableAccounts -MoveAccounts -MailReport -MailFrom "ADAccountsChecker@contoso.com" -MailTo "admins@contoso.com" -SmtpServer "mail.contoso.com"
-    Script will scan, disable and move users' and computers' accounts which inactive for 90 days, then send mail report
+    Script will scan, disable and move users' and computers' accounts which are inactive for 90 days, then send mail report
 #>
 
 #version 0.2
@@ -257,7 +257,7 @@ TABLE{border-width: 1px;border-style: solid;border-color: black;border-collapse:
 TH{border-width: 1px;padding: 0px;border-style: solid;border-color: black;}
 TD{border-width: 1px;padding: 5px;border-style: solid;border-color: black;}
 </style>
-<h2>In domain $Domain found $($Accounts.Count) account(s) which inactive for $MaxInactiveDays days</h2>
+<h2>In domain $Domain found $($Accounts.Count) account(s) inactive for $MaxInactiveDays days</h2>
 <h3>List of succesfully processed accounts:</h3>
 "@
         $MailSubj = "Report: $($Accounts.Count) accounts are inactive for $MaxInactiveDays days"
@@ -298,3 +298,64 @@ TD{border-width: 1px;padding: 5px;border-style: solid;border-color: black;}
 } 
 
 Write-Log "*** Script finished ***"
+
+# SIG # Begin signature block
+# MIIKzgYJKoZIhvcNAQcCoIIKvzCCCrsCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
+# gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQsm244TZHKm4VU0N0KSmTc3z
+# j0igggc/MIIHOzCCBiOgAwIBAgIKPjsvgwAAAAABozANBgkqhkiG9w0BAQsFADBK
+# MRMwEQYKCZImiZPyLGQBGRYDTEFOMRYwFAYKCZImiZPyLGQBGRYGSE9NRTI0MRsw
+# GQYDVQQDExJIT01FMjQtRlBDLURDMDEtQ0EwHhcNMTgwNTI4MDg0MzQwWhcNMjIw
+# NjI5MjAxNTIyWjCBkjETMBEGCgmSJomT8ixkARkWA0xBTjEWMBQGCgmSJomT8ixk
+# ARkWBkhPTUUyNDEPMA0GA1UECxMGSE9NRTI0MQ0wCwYDVQQLEwR1c2VyMQswCQYD
+# VQQLEwJJVDEaMBgGA1UECwwRdGVzdF9IYW5nb3V0c0NoYXQxGjAYBgNVBAMTEVl1
+# cmlpIFBvbm9tYXJlbmtvMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA
+# nAnArMW46ndumw8D26xMN0EzqrZfy3jWpGbuErbvo104MFkA0M9B+YRBIBpg9pyc
+# jJHbD3gJt+DnL/PJvrlfQqNnBZ+0wamCjpZ3Fyxi4zZohJYR9U9luDxzLHlPTlVP
+# kDyCUWK/8BnjYI2F+PkICl439hLKIgJFNtgWjiqoqkkHcal5pmDHExvnPYN236e/
+# rLNy5QG4fMCeJVAMBEMxK3yqHVKHUabGuqoleXS+D0ZeENJjBv+dtwM69+IaOgbx
+# H9rsNg2NFIeqBSRPedZlEO4J6HHyOMEMZaOoJ7SalJzd6glX3TVyZg3oQ5kA9mKg
+# 17dG21qSzXbDZLQebzTpupyfF4cJzfgtuF5HKGJI+h1YUmxUkb88kzD4xq4p+6Ac
+# FMQCRNBdjNQ3epabsH6Y1/YYhYaKFQ7FHsjHpCLXcJK5IsL+Sdeos2JBToSCPS57
+# oY6SGLzoCgW+5a+3fL1ltjdwgQOeY+pOAavDMhdA1XD6gx98r0jttY4kQGkQb0FG
+# vtxOir+byCW8ylasybN81m6FlfrTjCtcTJk0hHVDXyAnKwitLwVubk4igzh3gdY+
+# Oe4qaOXu27crd8gHpBShl82OxGlT8dSA3+CG4r39iVBN2SfDYxUQ4CgvH/yTr5pq
+# 8QsfmmrODYQQ4NeZ93mUExvhA5vgZGfh7E+Ac5JYT5ECAwEAAaOCAtgwggLUMD0G
+# CSsGAQQBgjcVBwQwMC4GJisGAQQBgjcVCIKe4wCE4OtDhbGPLoLe9wOFkbFkgSCr
+# +ACHtK9ZAgFkAgEDMBMGA1UdJQQMMAoGCCsGAQUFBwMDMA4GA1UdDwEB/wQEAwIH
+# gDAbBgkrBgEEAYI3FQoEDjAMMAoGCCsGAQUFBwMDMB0GA1UdDgQWBBR+J9qFfyQ6
+# OUAFeor4elWZLMMrgjAfBgNVHSMEGDAWgBT5txsgAMNmojURI9R4BRyOej9UNzCC
+# AREGA1UdHwSCAQgwggEEMIIBAKCB/aCB+oaBuWxkYXA6Ly8vQ049SE9NRTI0LUZQ
+# Qy1EQzAxLUNBLENOPUZQQy1EQzAxLENOPUNEUCxDTj1QdWJsaWMlMjBLZXklMjBT
+# ZXJ2aWNlcyxDTj1TZXJ2aWNlcyxDTj1Db25maWd1cmF0aW9uLERDPUhPTUUyNCxE
+# Qz1MQU4/Y2VydGlmaWNhdGVSZXZvY2F0aW9uTGlzdD9iYXNlP29iamVjdENsYXNz
+# PWNSTERpc3RyaWJ1dGlvblBvaW50hjxodHRwOi8vZnBjLWRjMDEuaG9tZTI0Lmxh
+# bi9DZXJ0RW5yb2xsL0hPTUUyNC1GUEMtREMwMS1DQS5jcmwwgcMGCCsGAQUFBwEB
+# BIG2MIGzMIGwBggrBgEFBQcwAoaBo2xkYXA6Ly8vQ049SE9NRTI0LUZQQy1EQzAx
+# LUNBLENOPUFJQSxDTj1QdWJsaWMlMjBLZXklMjBTZXJ2aWNlcyxDTj1TZXJ2aWNl
+# cyxDTj1Db25maWd1cmF0aW9uLERDPUhPTUUyNCxEQz1MQU4/Y0FDZXJ0aWZpY2F0
+# ZT9iYXNlP29iamVjdENsYXNzPWNlcnRpZmljYXRpb25BdXRob3JpdHkwNgYDVR0R
+# BC8wLaArBgorBgEEAYI3FAIDoB0MG3l1cmlpLnBvbm9tYXJlbmtvQGhvbWUyNC5k
+# ZTANBgkqhkiG9w0BAQsFAAOCAQEAKjUiMzO4ZMECYjavWwPk8Conw0Ye9Jbex/yD
+# qFtIUllpRpArN505Mvj3qVrkz8F6bpKVzCa4vmqFR7G9wmtsWnIK+OOcXtdVGr+0
+# J7/ZD2pMZUVoGgHIiw3MCli48vbNTjHpKuLGjyFEtlKvbWWQyB6pRpZ0ZF4MES71
+# lh+TMhvA7D1KKf2+cXlrd1Y5qqjtCMgYkhT/dheHkVJ8+tesnHkRA6BAmZpTmaYv
+# exMFlE6PY5YGYcbVgqDE+ZzOz34YLlDjJ6at7FygfSADt8i3zYtvs87YeXBB+yHK
+# 3dU67MUsllvJzfKIEBVGK39a8ULjZeJf92FKSjKuTyERPnSo3TGCAvkwggL1AgEB
+# MFgwSjETMBEGCgmSJomT8ixkARkWA0xBTjEWMBQGCgmSJomT8ixkARkWBkhPTUUy
+# NDEbMBkGA1UEAxMSSE9NRTI0LUZQQy1EQzAxLUNBAgo+Oy+DAAAAAAGjMAkGBSsO
+# AwIaBQCgeDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEM
+# BgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMCMGCSqG
+# SIb3DQEJBDEWBBSSmrG6OMgYES96f0LKS6fUGb7lHjANBgkqhkiG9w0BAQEFAASC
+# AgBMUiKxYX323noKQdEpJ0iz4hH41MpMO+KHP0abEbKq6XPJlqL8Cv+qy89QRZn6
+# VqdynVWDm0s+KjEweOzuU7MzM83sKC8fwzxb+Ys059BqUwwjQsC+nYe6sykvc+ct
+# u76X55oWXfGs2IXkBcR2PrRkwkwEIEv2RToz/9g5tI4HDBaefhIdL0OxpMZcwdaI
+# 5iQ93jq8sllDHbkRQRUbfYNMNTFXpfpQEDSBeR4I6/ooSmIX5gRCBbZh+hAF4laG
+# mofLFJz1/tWutmVmo+LHHCFPZYySKRqh7Sw92Bbbc9l3Aq1Td8O3L1N9e0sByi0x
+# Bsz2Aq0rwt6YjjBzaOQNQGdQBWCyxejo3w2gQ8xHAXkGtwT4gP/+WVEdjYvgZCW1
+# 0gPyQn3I8HHzxCYeRd59kASRRh5ecBIvC83Q8XlBdyNOwFfEaRZ0qQUE1vwcNtNs
+# Cm2n5hkhrnUSm0EiupurTExY5QC/iiXlRlnJYIiQQUOhvV4sFjSjfUnAtsM2tWps
+# MCjz1y3m0jVYdbwrB5y27x89TjQbTX605uHWSUZxCSbfqlCRQUTNTQCUGJP+0UY/
+# hXaM77wmbLt7P7OLEiUFL6pxNPYBxa15H597lm7nNaA7pV9ZnOs0UYdZzouyPmcs
+# RxKcmsCQLmribm19XbEf6NsVWocUkPwtIq0OVdLWtIgcWw==
+# SIG # End signature block
