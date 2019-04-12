@@ -52,6 +52,8 @@
     NOTE: No nested groups allowed!
 .PARAMETER ExtendedReport
     Show an additional information about accounts
+.PARAMETER EmailComment
+    Add extra comment to the report email. Just put here any additional info that will be sent along with an email body (at the top of it).
 .PARAMETER Verbose
     Enable verbose output
 .PARAMETER Debug
@@ -90,7 +92,8 @@ param(
     [switch]$WhatIf,
     [switch]$ExtendedReport,
     [string]$ExcludeComputersGroup = '',
-    [string]$ExcludeUsersGroup = ''
+    [string]$ExcludeUsersGroup = '',
+    [string]$EmailComment = ''
 )
 
 function Write-Log {
@@ -268,11 +271,11 @@ TD{border-width: 1px;padding: 5px;border-style: solid;border-color: black;}
         [string]$MailBody = FormatResults $AccountsProcessed | ConvertTo-Html -Head $ReportHead
         
         if ($SkippedComps.Count -gt 0) {
-            $MailBody += FormatResults $SkippedComps | ConvertTo-Html -Head '<p><h2><font color="blue">There are skipped computers:</font></h2>'
+            $MailBody += FormatResults $SkippedComps | ConvertTo-Html -Head '<p><h2><font color="blue">There is list of skipped computers:</font></h2>'
         }
 
         if ($SkippedUsers.Count -gt 0) {
-            $MailBody += FormatResults $SkippedUsers | ConvertTo-Html -Head '<p><h2><font color="blue">There are skipped users:</font></h2>'
+            $MailBody += FormatResults $SkippedUsers | ConvertTo-Html -Head '<p><h2><font color="blue">There is list of skipped users:</font></h2>'
         }
 
         if ($AccountsErrors.Count -gt 0) {
@@ -282,6 +285,7 @@ TD{border-width: 1px;padding: 5px;border-style: solid;border-color: black;}
     } else {
         $MailBody = "<font color=`"green`">Inactive for $MaxInactiveDays accounts not found.</font>"
     }
+    if ($EmailComment -ne '') { $MailBody = "<p>$EmailComment`n<p>$MailBody" }
     Write-Debug $MailBody
     try {
         Send-MailMessage  -Body $MailBody -SmtpServer $SMTPServer -Encoding ([System.Text.Encoding]::Default) -From $MailFrom -Subject $MailSubj -To $MailTo -BodyAsHtml -ErrorAction Stop
@@ -302,8 +306,8 @@ Write-Log "*** Script finished ***"
 # SIG # Begin signature block
 # MIIKzgYJKoZIhvcNAQcCoIIKvzCCCrsCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQsm244TZHKm4VU0N0KSmTc3z
-# j0igggc/MIIHOzCCBiOgAwIBAgIKPjsvgwAAAAABozANBgkqhkiG9w0BAQsFADBK
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgLbs8PPUmaiENb7h/e3rl+v7
+# 9Zigggc/MIIHOzCCBiOgAwIBAgIKPjsvgwAAAAABozANBgkqhkiG9w0BAQsFADBK
 # MRMwEQYKCZImiZPyLGQBGRYDTEFOMRYwFAYKCZImiZPyLGQBGRYGSE9NRTI0MRsw
 # GQYDVQQDExJIT01FMjQtRlBDLURDMDEtQ0EwHhcNMTgwNTI4MDg0MzQwWhcNMjIw
 # NjI5MjAxNTIyWjCBkjETMBEGCgmSJomT8ixkARkWA0xBTjEWMBQGCgmSJomT8ixk
@@ -346,16 +350,16 @@ Write-Log "*** Script finished ***"
 # NDEbMBkGA1UEAxMSSE9NRTI0LUZQQy1EQzAxLUNBAgo+Oy+DAAAAAAGjMAkGBSsO
 # AwIaBQCgeDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEM
 # BgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMCMGCSqG
-# SIb3DQEJBDEWBBSSmrG6OMgYES96f0LKS6fUGb7lHjANBgkqhkiG9w0BAQEFAASC
-# AgBMUiKxYX323noKQdEpJ0iz4hH41MpMO+KHP0abEbKq6XPJlqL8Cv+qy89QRZn6
-# VqdynVWDm0s+KjEweOzuU7MzM83sKC8fwzxb+Ys059BqUwwjQsC+nYe6sykvc+ct
-# u76X55oWXfGs2IXkBcR2PrRkwkwEIEv2RToz/9g5tI4HDBaefhIdL0OxpMZcwdaI
-# 5iQ93jq8sllDHbkRQRUbfYNMNTFXpfpQEDSBeR4I6/ooSmIX5gRCBbZh+hAF4laG
-# mofLFJz1/tWutmVmo+LHHCFPZYySKRqh7Sw92Bbbc9l3Aq1Td8O3L1N9e0sByi0x
-# Bsz2Aq0rwt6YjjBzaOQNQGdQBWCyxejo3w2gQ8xHAXkGtwT4gP/+WVEdjYvgZCW1
-# 0gPyQn3I8HHzxCYeRd59kASRRh5ecBIvC83Q8XlBdyNOwFfEaRZ0qQUE1vwcNtNs
-# Cm2n5hkhrnUSm0EiupurTExY5QC/iiXlRlnJYIiQQUOhvV4sFjSjfUnAtsM2tWps
-# MCjz1y3m0jVYdbwrB5y27x89TjQbTX605uHWSUZxCSbfqlCRQUTNTQCUGJP+0UY/
-# hXaM77wmbLt7P7OLEiUFL6pxNPYBxa15H597lm7nNaA7pV9ZnOs0UYdZzouyPmcs
-# RxKcmsCQLmribm19XbEf6NsVWocUkPwtIq0OVdLWtIgcWw==
+# SIb3DQEJBDEWBBR0rtVnCrISWhK5hZKbodznpDTRQzANBgkqhkiG9w0BAQEFAASC
+# AgBNuJkGza74AuhCerkcedr6F/DNt+3UxpHuEwd52KLwjQX3sZKhK6i6bcP1SoP9
+# Cx7SIRWMKMyIPM8mhRZkSNRmLP3fMl76snA4Ef6iocXrgwJSz4uEOCqyR8ajRZJb
+# x4oqRsaHpctf2d6YFLWY6KUz/XtQkk14gGsQ6t4/wnxW6vk1Dk051TeAkpd9OAD9
+# Xc5nLQSQpvqO0kPMY/E1fr8BgGhqLD4I4nnUV3anqJXN1SguQ/kdhgZVExF4x7Rc
+# WAlC89Xl4rb8HfIZ5o7ZyCQ6CoD4IVfr7cGAVHdc0qnoENNt1Chjv3jX/vY5LoSp
+# cqPkZataPi9LM4l0QlNLQkrPo8vSfT7loWrmugnUWaXGaKraegpHf0DfA6qPG8Bo
+# Ejo+EI3xaV+HlG8M00Ll557ygshrrQxgt3TPnzt7M5JBVtuyBoF6dkj8Rm1th/MI
+# IDtirkJW1L7JvQyluKK2WaCfGYC8Y1POraXGGC+SoxzhABEsV9mTDKd3dl0hItQk
+# ZF7jyXsDjch6VufUQT8EcD87C89dfF1OlDP+GUtsWHDzdNKX36px3An2dyY+0jE0
+# n4dIuqfr9IPw+hee2v9xkGcRfDdwDJAen8C1pXvFgwn+zFyURNXb34oXR1+f2sMd
+# GsLik/dvzjntTlFwSE6uKgEdTEMKA4x3pGbd3o25Zs9d+Q==
 # SIG # End signature block
