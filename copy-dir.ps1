@@ -41,16 +41,46 @@ param(
     [string]$To,
 
     [Alias("PreserveCreationTime")]
-    [switch]$PreserveTime
+    [switch]$PreserveTime,
+
+    [switch]$DontShowSize,
+    [switch]$DontShowTotalSize,
+    [switch]$DontSnowTotalTime,
+    [switch]$DontShowTotalSpeed
 )
 
 
 #region Constants and variables
 
+$TotalSize = 0
+
 #endregion Constants and variables
 
 
 #region Functions
+
+Function ConvertTo-PrettyCapacity {
+    Param (
+        [Parameter(
+            Mandatory = $True,
+            ValueFromPipeline = $True
+            )
+        ]
+    [Int64]$Bytes,
+    [Int64]$RoundTo = 1
+    )
+    If ($Bytes -Gt 0) {
+        $Base = 1024
+        $Labels = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+        $Order = [Math]::Floor( [Math]::Log($Bytes, $Base) )
+        $Rounded = [Math]::Round($Bytes/( [Math]::Pow($Base, $Order) ), $RoundTo)
+        [String]($Rounded) + " " + $Labels[$Order]
+    }
+    Else {
+        "0"
+    }
+    Return
+}
 
 function Copy-FilesRecursively {
     <#
@@ -95,15 +125,22 @@ function Copy-FilesRecursively {
                         if($PSCmdlet.ShouldProcess($i.FullName, "COPY")) {
                             # Copy file
                             try {
+                                if (!$DontShowSize) { Write-Host "($(ConvertTo-PrettyCapacity $i.Length)) " -NoNewline }                               
                                 $file = Copy-Item -LiteralPath $i.FullName -Destination $Dest -Force -ErrorAction Stop -PassThru
+                                $TotalSize += $i.Length
                                 if ($PreserveTime) {
                                     $file.CreationTimeUtc = $i.CreationTimeUtc                                
                                     $file.LastWriteTimeUtc = $i.LastWriteTimeUtc
                                     $file.LastAccessTimeUtc = $i.LastAccessTimeUtc
                                 }
-                                Write-Host '- Ok' -ForegroundColor Green
+                                Write-Host '- Ok' -ForegroundColor Green -NoNewline
+                                if (!$DontShowTotalSize) { Write-Host " $(ConvertTo-PrettyCapacity $TotalSize)" -ForegroundColor DarkGray -NoNewline }
+                                $TotalTime = (Get-Date).Subtract($StartTimestamp)
+                                if (!$DontSnowTotalTime) { Write-Host " $($TotalTime.ToString("hh\:mm\:ss"))" -ForegroundColor DarkGray -NoNewline }
+                                if (!$DontShowTotalSpeed) { Write-Host " ($( ConvertTo-PrettyCapacity ($TotalSize/$TotalTime.TotalSeconds) )/s)" -ForegroundColor DarkGray -NoNewline }
+                                Write-Host
                             } catch {
-                                Write-Host '- Error' -ForegroundColor Red
+                                Write-Host "- $($_.Exception.Message)" -ForegroundColor Red
                             }
                         }
                     } catch {
@@ -147,6 +184,9 @@ function Copy-FilesRecursively {
 
 #region Main
 
+$StartTimestamp = Get-Date
+Write-Host "Started: $StartTimestamp"
 Copy-FilesRecursively $From $To
+Write-Host "Finished: $(Get-Date)"
 
 #endregion Main
