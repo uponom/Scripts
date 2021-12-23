@@ -7,8 +7,8 @@
     Source directory
 .PARAMETER To
     Destination directory   
-.PARAMETER PreserveCreationTime
-    Set File Creation Time as at source      
+.PARAMETER PreserveTime
+    Set timestamps of items as at source      
 .NOTES
     Version:        1.0
     Author:         Yurii Ponomarenko
@@ -40,7 +40,8 @@ param(
     [Alias("Destination")]  
     [string]$To,
 
-    [switch]$PreserveCreationTime
+    [Alias("PreserveCreationTime")]
+    [switch]$PreserveTime
 )
 
 
@@ -95,8 +96,7 @@ function Copy-FilesRecursively {
                             # Copy file
                             try {
                                 $file = Copy-Item -LiteralPath $i.FullName -Destination $Dest -Force -ErrorAction Stop -PassThru
-                                $file
-                                if ($PreserveCreationTime) {
+                                if ($PreserveTime) {
                                     $file.CreationTimeUtc = $i.CreationTimeUtc                                
                                     $file.LastWriteTimeUtc = $i.LastWriteTimeUtc
                                     $file.LastAccessTimeUtc = $i.LastAccessTimeUtc
@@ -118,7 +118,7 @@ function Copy-FilesRecursively {
                         if($PSCmdlet.ShouldProcess($Dest, "MKDIR")) {
                             try {
                                 $dir = New-Item -Path $To -Name $i.Name -ItemType Directory -ErrorAction Stop
-                                if ($PreserveCreationTime) {
+                                if ($PreserveTime) {
                                     $dir.CreationTimeUtc = $i.CreationTimeUtc                                
                                     $dir.LastWriteTimeUtc = $i.LastWriteTimeUtc
                                     $dir.LastAccessTimeUtc = $i.LastAccessTimeUtc
