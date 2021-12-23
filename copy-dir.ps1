@@ -1,22 +1,19 @@
 <#
 .SYNOPSIS
-    Copies recursively from one directory to another
+    Copies recursively from one directory to another without overwritting existing files of same size.
 .DESCRIPTION
-    <Brief description of script>
-.PARAMETER <Parameter_Name>
-    <Brief description of parameter input required. Repeat this attribute if required>
-.INPUTS
-    <Inputs if any, otherwise state None>
-.OUTPUTS
-    <Outputs if any, otherwise state None - example: Log file stored in C:\Windows\Temp\<name>.log>
+    Unlike Copy-Item cmdlet this script won't overwrite files in destination if they are same size with source.
+.PARAMETER From
+    Source directory
+.PARAMETER To
+    Destination directory   
+.PARAMETER PreserveCreationTime
+    Set File Creation Time as at source      
 .NOTES
     Version:        1.0
-    Author:         <Name>
-    Creation Date:  <Date>
-    Purpose/Change: Initial script development
-  
+    Author:         Yurii Ponomarenko
 .EXAMPLE
-    <Example goes here. Repeat this attribute for more than one example>
+    Copy-Dir -From c:\source_directory -To d:\destination_directory
 #>
 
 [cmdletbinding(
@@ -41,19 +38,13 @@ param(
     [Parameter(Mandatory=$true,Position=1,ValueFromPipeline=$true,ValueFromPipelineByPropertyName=$true,ParameterSetName='Default')]
     [ValidateNotNullOrEmpty()]
     [Alias("Destination")]  
-    [string]$To
+    [string]$To,
 
-    # [string]$SlashChar = '\\',
-    # [string]$EndDirChar = '/'
-
-    
-
+    [switch]$PreserveCreationTime
 )
 
 
 #region Constants and variables
-$PathReplaceFrom = '\'
-$PathReplaceTo = '/'
 
 #endregion Constants and variables
 
@@ -87,38 +78,58 @@ function Copy-FilesRecursively {
                 Write-Host $FillDepth -ForegroundColor DarkGray -NoNewline
                 Write-Host $i.Name -NoNewline -ForegroundColor Blue
                 Write-Host ' ==> ' -NoNewline
-                Write-Host $Dest -ForegroundColor Cyan -NoNewline
+                Write-Host "$Dest " -ForegroundColor Cyan -NoNewline
                 if ($i.GetType().Name -eq 'FileInfo') {
                     # Check if file exists
-                    # if (Test-Path )
-                    # if($PSCmdlet.ShouldProcess($i.FullName, "COPY")) {
-                    #     # Copy file
-                    #     try {
-                    #         # ...
-                            Write-Host ' - Ok' -ForegroundColor Green
-                    #     } catch {
-                    #         Write-Host ' - Error' -ForegroundColor Red
-                    #     }
-                    # }
+                    try {
+                        if (Test-Path $Dest -ErrorAction Stop) {
+                            # File exist, let's check the size
+                            if ((Get-Item $Dest -Force -ErrorAction Stop).Length -eq $i.Length) {
+                                Write-Host '- file exists (same size)' -ForegroundColor DarkGreen
+                                continue
+                            } else {
+                                Write-Host '- wrong file size, overwritting' -ForegroundColor Yellow
+                            }
+                        }
+                        if($PSCmdlet.ShouldProcess($i.FullName, "COPY")) {
+                            # Copy file
+                            try {
+                                $file = Copy-Item -LiteralPath $i.FullName -Destination $Dest -Force -ErrorAction Stop -PassThru
+                                $file
+                                if ($PreserveCreationTime) {
+                                    $file.CreationTimeUtc = $i.CreationTimeUtc                                
+                                    $file.LastWriteTimeUtc = $i.LastWriteTimeUtc
+                                    $file.LastAccessTimeUtc = $i.LastAccessTimeUtc
+                                }
+                                Write-Host '- Ok' -ForegroundColor Green
+                            } catch {
+                                Write-Host '- Error' -ForegroundColor Red
+                            }
+                        }
+                    } catch {
+                        Write-Host "- $($_.Exception.Message)" -ForegroundColor Red
+                    }
                 } elseif ($i.GetType().Name -eq 'DirectoryInfo') {
                     # Check if dir exists
                     if (Test-Path $Dest) {
-                        Write-Host ' - dir exists' -ForegroundColor DarkGreen
+                        Write-Host '- dir exists' -ForegroundColor DarkGreen
                     } else {
                         # Create dir
                         if($PSCmdlet.ShouldProcess($Dest, "MKDIR")) {
                             try {
                                 $dir = New-Item -Path $To -Name $i.Name -ItemType Directory -ErrorAction Stop
-                                $dir.CreationTimeUtc = $i.CreationTimeUtc                                
-                                # $dir.LastWriteTimeUtc = $i.LastWriteTimeUtc
-                                # $dir.LastAccessTimeUtc = $i.LastAccessTimeUtc
-                                Write-Host ' - Ok' -ForegroundColor Green
-                                Copy-FilesRecursively $i.FullName $Dest $($Depth+1)
+                                if ($PreserveCreationTime) {
+                                    $dir.CreationTimeUtc = $i.CreationTimeUtc                                
+                                    $dir.LastWriteTimeUtc = $i.LastWriteTimeUtc
+                                    $dir.LastAccessTimeUtc = $i.LastAccessTimeUtc
+                                }
+                                Write-Host '- Created' -ForegroundColor Green
                             } catch {
-                                Write-Host ' - Error' -ForegroundColor Red
+                                Write-Host "- $($_.Exception.Message)" -ForegroundColor Red
                             }                    
                         }
                     }
+                    Copy-FilesRecursively $i.FullName $Dest $($Depth+1)
                 }
             }
         } catch {
@@ -137,18 +148,5 @@ function Copy-FilesRecursively {
 #region Main
 
 Copy-FilesRecursively $From $To
-
-# 'Collecting directories to copy...'
-# $Files = Get-ChildItem -Recurse -Force -LiteralPath $From -Directory -Verbose | 
-#     select @{n='FullPath'; e={$_.FullName.Replace($PathReplaceFrom, $PathReplaceTo)}} |
-#         select FullPath, @{n='Depth'; e={([regex]::matches($_.FullPath, $PathReplaceTo)).Count}}
-
-# $Files | sort Depth -Descending | ft * -AutoSize 
-
-# foreach ( $f in ($Files | sort Depth -Descending).FullPath ) {
-#     $src = $f
-#     if ($src[-1] -ne $PathReplaceTo) { $src += $PathReplaceTo}
-#     "FROM: $src"
-# }
 
 #endregion Main
