@@ -2,23 +2,27 @@
 .SYNOPSIS
     Copies recursively from one directory to another without overwritting existing files of same size.
 .DESCRIPTION
-    Unlike Copy-Item cmdlet this script won't overwrite files in destination if they are same size with source.
+    Unlike Copy-Item cmdlet this script won't overwrite files in destination if they are same size with source. Also it can preserve file timestamps ("PreserveTime" parameter).
 .PARAMETER From
-    Source directory
+    Source directory.
 .PARAMETER To
-    Destination directory   
+    Destination directory.   
 .PARAMETER PreserveTime
-    Set timestamps of items as at source      
+    Set timestamps of items as at source.      
 .PARAMETER DontShowSize
-    Do not show size of a file to be copied   
+    Do not show size of a file to be copied.   
 .PARAMETER DontShowTotalSize
-    Do not show the total copied volume   
+    Do not show the total copied volume.   
 .PARAMETER DontSnowTotalTime
-    Do not show the total time spent   
+    Do not show the total time spent.   
 .PARAMETER DontShowTotalSpeed
-    Do not show the average copy speed   
+    Do not show the average copy speed.   
+.PARAMETER ProgressBar
+    Show progress bar. (Can slow down the copying process!)
+.PARAMETER ProgressBarDepth
+    Limit nested progress bars. Default value is 3.    
 .NOTES
-    Version:        1.1
+    Version:        1.2
     Author:         Yurii Ponomarenko
 .EXAMPLE
     Copy-Dir -From c:\source_directory -To d:\destination_directory
@@ -38,23 +42,24 @@
 ##Requires -Assembly path\to\foo.dll
 
 param(
-    [Parameter(Mandatory=$true,Position=0,ValueFromPipeline=$true,ValueFromPipelineByPropertyName=$true,ParameterSetName='Default')]
+    [Parameter(Mandatory=$true,Position=0,ValueFromPipeline=$true,ValueFromPipelineByPropertyName=$true)]
     [ValidateNotNullOrEmpty()]
     [Alias("Source")]  
     [string]$From,
 
-    [Parameter(Mandatory=$true,Position=1,ValueFromPipeline=$true,ValueFromPipelineByPropertyName=$true,ParameterSetName='Default')]
+    [Parameter(Mandatory=$true,Position=1,ValueFromPipeline=$true,ValueFromPipelineByPropertyName=$true)]
     [ValidateNotNullOrEmpty()]
     [Alias("Destination")]  
     [string]$To,
 
-    [Alias("PreserveCreationTime")]
     [switch]$PreserveTime,
 
     [switch]$DontShowSize,
     [switch]$DontShowTotalSize,
     [switch]$DontSnowTotalTime,
-    [switch]$DontShowTotalSpeed
+    [switch]$DontShowTotalSpeed,
+    [switch]$ProgressBar,
+    [int]$ProgressBarDepth = 3
 )
 
 
@@ -90,6 +95,19 @@ Function ConvertTo-PrettyCapacity {
     Return
 }
 
+function ShowProgressBar {
+    param (
+        [string]$Name,
+        [int]$Depth = 0,
+        [int64]$TotalItems,
+        [int64]$ItemsProcessed
+    )
+    if ($ProgressBar -and $Depth -lt $ProgressBarDepth) {
+        $percentProcessed = [int]($ItemsProcessed*100/$TotalItems)
+        Write-Progress -Id $Depth -Activity $Name -PercentComplete $percentProcessed #-Status "$percentProcessed%"
+    }            
+}
+
 function Copy-FilesRecursively {
     <#
         .SYNOPSIS
@@ -111,8 +129,11 @@ function Copy-FilesRecursively {
     }
     
     process {
+        [int64]$ItemsProcessed = 0
         try {
-            foreach ($i in (Get-ChildItem -Force -LiteralPath $From -ErrorAction Stop | sort ModeWithoutHardLink)) {
+            $Items = @(Get-ChildItem -Force -LiteralPath $From -ErrorAction Stop | Sort-Object Mode, Name)
+            foreach ($i in $Items) {
+                ShowProgressBar $i.Name $Depth $Items.Count $ItemsProcessed
                 $Dest = Join-Path $To $i.Name
                 Write-Host $FillDepth -ForegroundColor Gray -NoNewline
                 Write-Host $i.Name -NoNewline -ForegroundColor Blue
@@ -176,6 +197,8 @@ function Copy-FilesRecursively {
                     }
                     Copy-FilesRecursively $i.FullName $Dest $($Depth+1)
                 }
+                $ItemsProcessed++
+                ShowProgressBar $i.Name $Depth $Items.Count $ItemsProcessed
             }
         } catch {
             Write-Host $_.Exception.Message -ForegroundColor Red
@@ -183,7 +206,7 @@ function Copy-FilesRecursively {
     }
     
     end {
-        # ...
+        if ($ProgressBar) { Write-Progress -Id $Depth -Completed -Activity $From }
     }    
 }
 
@@ -194,7 +217,10 @@ function Copy-FilesRecursively {
 
 $StartTimestamp = Get-Date
 Write-Host "Started: $StartTimestamp"
+$PBarSavedView = $PSStyle.Progress.View
+$PSStyle.Progress.View = 'Classic'
 Copy-FilesRecursively $From $To
+$PSStyle.Progress.View = $PBarSavedView
 $TimeNow = Get-Date
 Write-Host "Finished: $TimeNow"
 $TotalTime = $TimeNow.Subtract($StartTimestamp)
