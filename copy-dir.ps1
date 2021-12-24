@@ -66,6 +66,11 @@ param(
 #region Constants and variables
 
 $global:TotalSize = 0
+$global:TotalItemsProcessed = 0
+$global:TotalFilesCopied = 0
+$global:TotalDirsCreated = 0
+$global:TotalDirsProcessed = 0
+$global:TotalFilesProcessed = 0
 
 #endregion Constants and variables
 
@@ -133,6 +138,7 @@ function Copy-FilesRecursively {
         try {
             $Items = @(Get-ChildItem -Force -LiteralPath $From -ErrorAction Stop | Sort-Object Mode, Name)
             foreach ($i in $Items) {
+                $global:TotalItemsProcessed++
                 ShowProgressBar $i.Name $Depth $Items.Count $ItemsProcessed
                 $Dest = Join-Path $To $i.Name
                 Write-Host $FillDepth -ForegroundColor Gray -NoNewline
@@ -140,6 +146,7 @@ function Copy-FilesRecursively {
                 Write-Host ' ==> ' -NoNewline
                 Write-Host "$Dest " -ForegroundColor Cyan -NoNewline
                 if ($i.GetType().Name -eq 'FileInfo') {
+                    $global:TotalFilesProcessed++
                     # Check if file exists
                     try {
                         if (Test-Path $Dest -ErrorAction Stop) {
@@ -157,6 +164,7 @@ function Copy-FilesRecursively {
                                 if (!$DontShowSize) { Write-Host "($(ConvertTo-PrettyCapacity $i.Length)) " -NoNewline }                               
                                 $file = Copy-Item -LiteralPath $i.FullName -Destination $Dest -Force -ErrorAction Stop -PassThru
                                 $global:TotalSize += $i.Length
+                                $global:TotalFilesCopied++
                                 if ($PreserveTime) {
                                     $file.CreationTimeUtc = $i.CreationTimeUtc                                
                                     $file.LastWriteTimeUtc = $i.LastWriteTimeUtc
@@ -176,6 +184,7 @@ function Copy-FilesRecursively {
                         Write-Host "- $($_.Exception.Message)" -ForegroundColor Red
                     }
                 } elseif ($i.GetType().Name -eq 'DirectoryInfo') {
+                    $global:TotalDirsProcessed++
                     # Check if dir exists
                     if (Test-Path $Dest) {
                         Write-Host '- dir exists' -ForegroundColor DarkGreen
@@ -184,6 +193,7 @@ function Copy-FilesRecursively {
                         if($PSCmdlet.ShouldProcess($Dest, "MKDIR")) {
                             try {
                                 $dir = New-Item -Path $To -Name $i.Name -ItemType Directory -ErrorAction Stop
+                                $global:TotalDirsCreated++
                                 if ($PreserveTime) {
                                     $dir.CreationTimeUtc = $i.CreationTimeUtc                                
                                     $dir.LastWriteTimeUtc = $i.LastWriteTimeUtc
@@ -224,8 +234,12 @@ $PSStyle.Progress.View = $PBarSavedView
 $TimeNow = Get-Date
 Write-Host "Finished: $TimeNow"
 $TotalTime = $TimeNow.Subtract($StartTimestamp)
-Write-Host "Time spent: $( $TotalTime.ToString("hh\:mm\:ss") )" -ForegroundColor Cyan
-Write-Host "Copied:     $( ConvertTo-PrettyCapacity $global:TotalSize )" -ForegroundColor Cyan
-Write-Host "Copy speed: $( ConvertTo-PrettyCapacity ($global:TotalSize/$TotalTime.TotalSeconds) )/s" -ForegroundColor Cyan
+Write-Host "Time spent:      $( $TotalTime.ToString("hh\:mm\:ss") )" -ForegroundColor Cyan
+Write-Host "Items processed: $global:TotalItemsProcessed" -ForegroundColor Cyan
+Write-Host "Dirs processed   $global:TotalDirsProcessed" -ForegroundColor Cyan
+Write-Host "Dirs created:    $global:TotalDirsCreated" -ForegroundColor Cyan
+Write-Host "Files processed: $global:TotalFilesProcessed" -ForegroundColor Cyan
+Write-Host "Copied:          $( ConvertTo-PrettyCapacity $global:TotalSize ) in $global:TotalFilesCopied files (Average file size: $( ConvertTo-PrettyCapacity ($global:TotalSize/$global:TotalFilesCopied)))" -ForegroundColor Cyan
+Write-Host "Copy speed:      $( ConvertTo-PrettyCapacity ($global:TotalSize/$TotalTime.TotalSeconds) )/s" -ForegroundColor Cyan
 
 #endregion Main
