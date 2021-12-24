@@ -65,12 +65,12 @@ param(
 
 #region Constants and variables
 
-$global:TotalSize = 0
-$global:TotalItemsProcessed = 0
-$global:TotalFilesCopied = 0
-$global:TotalDirsCreated = 0
-$global:TotalDirsProcessed = 0
-$global:TotalFilesProcessed = 0
+[int64]$global:TotalSize = 0
+[int64]$global:TotalItemsProcessed = 0
+[int64]$global:TotalFilesCopied = 0
+[int64]$global:TotalDirsCreated = 0
+[int64]$global:TotalDirsProcessed = 0
+[int64]$global:TotalFilesProcessed = 0
 
 #endregion Constants and variables
 
