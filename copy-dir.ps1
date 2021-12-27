@@ -18,11 +18,11 @@
 .PARAMETER DontShowTotalSpeed
     Do not show the average copy speed.   
 .PARAMETER ProgressBar
-    Show progress bar. (Can slow down the copying process!)
+    Show progress bar. (It may slow down the copying process!)
 .PARAMETER ProgressBarDepth
     Limit nested progress bars. Default value is 3.    
 .NOTES
-    Version:        1.2
+    Version:        1.3
     Author:         Yurii Ponomarenko
 .EXAMPLE
     Copy-Dir -From c:\source_directory -To d:\destination_directory
@@ -149,7 +149,7 @@ function Copy-FilesRecursively {
                     $global:TotalFilesProcessed++
                     # Check if file exists
                     try {
-                        if (Test-Path $Dest -ErrorAction Stop) {
+                        if (Test-Path -LiteralPath $Dest -ErrorAction Stop) {
                             # File exist, let's check the size
                             if ((Get-Item $Dest -Force -ErrorAction Stop).Length -eq $i.Length) {
                                 Write-Host '- file exists (same size)' -ForegroundColor DarkGreen
@@ -186,13 +186,15 @@ function Copy-FilesRecursively {
                 } elseif ($i.GetType().Name -eq 'DirectoryInfo') {
                     $global:TotalDirsProcessed++
                     # Check if dir exists
-                    if (Test-Path $Dest) {
+                    if (Test-Path -LiteralPath $Dest) {
                         Write-Host '- dir exists' -ForegroundColor DarkGreen
                     } else {
                         # Create dir
                         if($PSCmdlet.ShouldProcess($Dest, "MKDIR")) {
                             try {
-                                $dir = New-Item -Path $To -Name $i.Name -ItemType Directory -ErrorAction Stop
+                                $dir = New-Item -Path (Join-path $To $i.Name) -ItemType Directory -ErrorAction Stop -Force
+                                # $dir = New-Item -Path $To -Name $i.Name -ItemType Directory -ErrorAction Stop # doesn't work with names with '[]' inside
+                                if ($null -eq $dir) {throw 'Directory is not created'}
                                 $global:TotalDirsCreated++
                                 if ($PreserveTime) {
                                     $dir.CreationTimeUtc = $i.CreationTimeUtc                                
@@ -239,7 +241,7 @@ Write-Host "Items processed: $global:TotalItemsProcessed" -ForegroundColor Cyan
 Write-Host "Dirs processed   $global:TotalDirsProcessed" -ForegroundColor Cyan
 Write-Host "Dirs created:    $global:TotalDirsCreated" -ForegroundColor Cyan
 Write-Host "Files processed: $global:TotalFilesProcessed" -ForegroundColor Cyan
-Write-Host "Copied:          $( ConvertTo-PrettyCapacity $global:TotalSize ) in $global:TotalFilesCopied files (Average file size: $( ConvertTo-PrettyCapacity ($global:TotalSize/$global:TotalFilesCopied)))" -ForegroundColor Cyan
-Write-Host "Copy speed:      $( ConvertTo-PrettyCapacity ($global:TotalSize/$TotalTime.TotalSeconds) )/s" -ForegroundColor Cyan
-
+Write-Host "Copied:          $( ConvertTo-PrettyCapacity $global:TotalSize ) in $global:TotalFilesCopied files ()" -ForegroundColor Cyan
+if (($global:TotalSize/$TotalTime.TotalSeconds) -ne 0) { Write-Host "Copy speed:      $( ConvertTo-PrettyCapacity ($global:TotalSize/$TotalTime.TotalSeconds) )/s" -ForegroundColor Cyan }
+if ($global:TotalFilesCopied -ne 0) { Write-Host "Aver. file size: $( ConvertTo-PrettyCapacity ($global:TotalSize/$global:TotalFilesCopied))" }
 #endregion Main
