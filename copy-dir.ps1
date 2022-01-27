@@ -22,7 +22,7 @@
 .PARAMETER ProgressBarDepth
     Limit nested progress bars. Default value is 3.    
 .NOTES
-    Version:        1.3
+    Version:        1.4
     Author:         Yurii Ponomarenko
 .EXAMPLE
     Copy-Dir -From c:\source_directory -To d:\destination_directory
@@ -59,7 +59,10 @@ param(
     [switch]$DontSnowTotalTime,
     [switch]$DontShowTotalSpeed,
     [switch]$ProgressBar,
-    [int]$ProgressBarDepth = 3
+    [int]$ProgressBarDepth = 2,
+
+    [ValidateSet('Classic', 'Minimal')]
+    [string]$ProgressBarStyle = 'Classic'
 )
 
 
@@ -155,7 +158,7 @@ function Copy-FilesRecursively {
                                 Write-Host '- file exists (same size)' -ForegroundColor DarkGreen
                                 continue
                             } else {
-                                Write-Host '- wrong file size, overwritting' -ForegroundColor Yellow
+                                Write-Host '- wrong file size, overwritting' -ForegroundColor Yellow -NoNewline
                             }
                         }
                         if($PSCmdlet.ShouldProcess($i.FullName, "COPY")) {
@@ -230,7 +233,7 @@ function Copy-FilesRecursively {
 $StartTimestamp = Get-Date
 Write-Host "Started: $StartTimestamp"
 $PBarSavedView = $PSStyle.Progress.View
-$PSStyle.Progress.View = 'Classic'
+$PSStyle.Progress.View = $ProgressBarStyle
 Copy-FilesRecursively $From $To
 $PSStyle.Progress.View = $PBarSavedView
 $TimeNow = Get-Date
@@ -241,7 +244,7 @@ Write-Host "Items processed: $global:TotalItemsProcessed" -ForegroundColor Cyan
 Write-Host "Dirs processed   $global:TotalDirsProcessed" -ForegroundColor Cyan
 Write-Host "Dirs created:    $global:TotalDirsCreated" -ForegroundColor Cyan
 Write-Host "Files processed: $global:TotalFilesProcessed" -ForegroundColor Cyan
-Write-Host "Copied:          $( ConvertTo-PrettyCapacity $global:TotalSize ) in $global:TotalFilesCopied files ()" -ForegroundColor Cyan
+Write-Host "Copied:          $( ConvertTo-PrettyCapacity $global:TotalSize ) in $global:TotalFilesCopied files" -ForegroundColor Cyan
 if (($global:TotalSize/$TotalTime.TotalSeconds) -ne 0) { Write-Host "Copy speed:      $( ConvertTo-PrettyCapacity ($global:TotalSize/$TotalTime.TotalSeconds) )/s" -ForegroundColor Cyan }
-if ($global:TotalFilesCopied -ne 0) { Write-Host "Aver. file size: $( ConvertTo-PrettyCapacity ($global:TotalSize/$global:TotalFilesCopied))" }
+if ($global:TotalFilesCopied -ne 0) { Write-Host "Aver. file size: $( ConvertTo-PrettyCapacity ($global:TotalSize/$global:TotalFilesCopied))" -ForegroundColor Cyan }
 #endregion Main
