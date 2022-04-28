@@ -39,9 +39,8 @@ if ([string]::IsNullOrEmpty($CommonTCPPort)) {
 }
 
 $PSStyle.Progress.View = 'Classic'
-# $OrigProgressPreference = $Global:ProgressPreference
-$OrigProgressPreference = $ProgressPreference
-$ProgressPreference = 'SilentlyContinue'
+$OrigProgressPreference = $Global:ProgressPreference
+$Global:ProgressPreference = 'SilentlyContinue'
 
 do {
     Write-Host "$(get-date -UFormat '%Y.%m.%d %H:%M:%S') " -NoNewline
@@ -68,4 +67,5 @@ do {
     if ($stayIn) { Start-Sleep -Seconds $SleepSeconds }
 } while ($stayIn)
 
-$ProgressPreference = $OrigProgressPreference
+$Global:ProgressPreference = $OrigProgressPreference
+
