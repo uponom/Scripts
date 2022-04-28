@@ -39,8 +39,11 @@ if ([string]::IsNullOrEmpty($CommonTCPPort)) {
 }
 
 $PSStyle.Progress.View = 'Classic'
+# $OrigProgressPreference = $Global:ProgressPreference
+$OrigProgressPreference = $ProgressPreference
+$ProgressPreference = 'SilentlyContinue'
 
-while (($Repeat -gt 0) -or $Infinite) {
+do {
     Write-Host "$(get-date -UFormat '%Y.%m.%d %H:%M:%S') " -NoNewline
     if($PSCmdlet.ShouldProcess("$ComputerName", "Test network connection")) {
         try {
@@ -60,6 +63,9 @@ while (($Repeat -gt 0) -or $Infinite) {
         }
         Write-Host $out
     }
-    Start-Sleep -Seconds $SleepSeconds
     $Repeat--
-}
+    $stayIn = ($Repeat -gt 0) -or $Infinite
+    if ($stayIn) { Start-Sleep -Seconds $SleepSeconds }
+} while ($stayIn)
+
+$ProgressPreference = $OrigProgressPreference
