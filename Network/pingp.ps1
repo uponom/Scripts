@@ -1,12 +1,18 @@
 ﻿<#
 .SYNOPSIS
     Network connectivity test to a specified host
+
 .DESCRIPTION
     This scrips is wrapper for Test-NetConnection cmdlet to provide ping-like functionality. It can check network connectivity by simple ping or by connecting to TCP port. 
+
 .PARAMETER ComputerName
     Remote host
+
 .PARAMETER CommonTCPPort
-    Protocol to test by TCP connection. It can be SMB, HTTP, RDP or WINRM. Simple ping will be used if parameter omitted.
+    Protocol to test by TCP connection. It can be SMB, HTTP, RDP or WINRM. Unless -Port specified, simple ping will be used if parameter omitted.
+
+.PARAMETER Port
+    TCP Port to test. Simple ping will be used if parameter omitted. Unless -CommonTCPPort specified, simple ping will be used if parameter omitted.
 
 .PARAMETER SleepSeconds
     Time interval between tests. Default value is 5 seconds.
@@ -42,6 +48,12 @@ param(
         ValueFromPipelineByPropertyName=$true,
         ParameterSetName='Default',
         HelpMessage="Enter a computer name")]
+    [Parameter(Mandatory=$true,
+        Position=0,
+        ValueFromPipeline=$true,
+        ValueFromPipelineByPropertyName=$true,
+        ParameterSetName='Port',
+        HelpMessage="Enter a computer name")]        
     [ValidateNotNullOrEmpty()]
     [Alias("Host")]  
     [string]$ComputerName,
@@ -50,9 +62,24 @@ param(
     [ValidateSet("SMB", "HTTP", "RDP", "WINRM")]
     [string]$CommonTCPPort = '',
 
+    [Parameter(Position=1,ValueFromPipelineByPropertyName=$true,ParameterSetName='Port')]
+    [ValidateRange(1,65535)]
+    [int]$Port,
+
+    [Parameter(ParameterSetName='Default')]
+    [Parameter(ParameterSetName='Port')]
     [int]$SleepSeconds = 5,
+
+    [Parameter(ParameterSetName='Default')]
+    [Parameter(ParameterSetName='Port')]
     [int]$Repeat = 0,
+
+    [Parameter(ParameterSetName='Default')]
+    [Parameter(ParameterSetName='Port')]
     [string]$Warnings = 'SilentlyContinue',
+
+    [Parameter(ParameterSetName='Default')]
+    [Parameter(ParameterSetName='Port')]
     [switch]$UntilSuccess
 )
 
@@ -71,7 +98,9 @@ $Params = @{
     ComputerName = $ComputerName
     WarningAction = $Warnings 
 }
-if ([string]::IsNullOrEmpty($CommonTCPPort)) {
+if ($Port -ge 1 -and $Port -le 65535) {
+    $Params.Add( 'Port', $Port )
+} elseif ([string]::IsNullOrEmpty($CommonTCPPort)) {
     Write-Host 'Ping check.'
 } else { 
     $Params.Add( 'CommonTCPPort', $CommonTCPPort )
@@ -98,10 +127,10 @@ do {
                 } elseif (!$res.PingSucceeded) {
                     $out += "$FormatError Ping and TCP test are FAILED.$FormatReset"
                 } else {
-                    $out += "$FormatError Tcp Test FAILED.$FormatReset" 
+                    $out += "$FormatSuccess Ping Succeeded$FormatReset but$FormatError Tcp Test FAILED.$FormatReset" 
                 }
             } elseif ($res.PingSucceeded) {
-                $out += "] $FormatSuccess Ping Succeeded.$FormatReset" 
+                $out += "]$FormatSuccess Ping Succeeded.$FormatReset" 
                 $IsSuccessful = $true 
             }
         } catch {
