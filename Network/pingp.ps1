@@ -9,13 +9,17 @@
     Protocol to test by TCP connection. It can be SMB, HTTP, RDP or WINRM. Simple ping will be used if parameter omitted.
 
 .PARAMETER SleepSeconds
-    Time interval between tests.
+    Time interval between tests. Default value is 5 seconds.
 
 .PARAMETER Repeat
-    How many times to repeat the test. Infinite repetition if the parameter omitted or 0.
+    How many times to repeat the test. Infinite repetitions if the parameter omitted or 0.
      
 .PARAMETER Warnings
     Configures displaying of warnings messages. "SilentlyContinue" by default.    
+
+.PARAMETER UntilSuccess
+    Continue testing a connection until get success.
+    It will stop testing even if you set -Repeat parameter.
      
 .NOTES
     Version:        0.1
@@ -32,17 +36,24 @@
 )]
 
 param(
-    [Parameter(Mandatory=$true,Position=0,ValueFromPipeline=$true,ValueFromPipelineByPropertyName=$true,ParameterSetName='Default')]
+    [Parameter(Mandatory=$true,
+        Position=0,
+        ValueFromPipeline=$true,
+        ValueFromPipelineByPropertyName=$true,
+        ParameterSetName='Default',
+        HelpMessage="Enter a computer name")]
     [ValidateNotNullOrEmpty()]
     [Alias("Host")]  
     [string]$ComputerName,
     
     [Parameter(Position=1,ValueFromPipelineByPropertyName=$true,ParameterSetName='Default')]
+    [ValidateSet("SMB", "HTTP", "RDP", "WINRM")]
     [string]$CommonTCPPort = '',
 
-    [int]$SleepSeconds = 15,
+    [int]$SleepSeconds = 5,
     [int]$Repeat = 0,
-    [string]$Warnings = 'SilentlyContinue'
+    [string]$Warnings = 'SilentlyContinue',
+    [switch]$UntilSuccess
 )
 
 $FormatSuccess = $PSStyle.Formatting.FormatAccent
@@ -70,21 +81,28 @@ if ([string]::IsNullOrEmpty($CommonTCPPort)) {
 $PSStyle.Progress.View = 'Classic'
 $OrigProgressPreference = $Global:ProgressPreference
 $Global:ProgressPreference = 'SilentlyContinue'
+$IsSuccessful = $false
 
 do {
     Write-Host "$(get-date -UFormat '%Y.%m.%d %H:%M:%S') " -NoNewline
     if($PSCmdlet.ShouldProcess("$ComputerName", "Test network connection")) {
         try {
             $res = Test-NetConnection @Params
-            $out = "$($res.ComputerName) [$($res.RemoteAddress)]"
-            if ($res.PingSucceeded) { $out += "$FormatSuccess Ping Succeeded.$FormatReset" }
-            if ($res.RemotePort -ne 0) { $out += " RemotePort=$($res.RemotePort)." }
-            if ($res.TcpTestSucceeded) { 
-                $out += "$FormatSuccess Tcp Test Succeeded.$FormatReset" 
-            } elseif (!$res.PingSucceeded) {
-                $out += "$FormatError Ping and TCP test are FAILED.$FormatReset"
-            } else {
-                $out += "$FormatError Tcp Test FAILED.$FormatReset" 
+            $out = "$($res.ComputerName) [$($res.RemoteAddress)"
+            # if ($res.PingSucceeded) { $out += "$FormatSuccess Ping Succeeded.$FormatReset" }
+            if ($res.RemotePort -ne 0) { 
+                $out += ":$($res.RemotePort)]" 
+                if ($res.TcpTestSucceeded) { 
+                    $out += "$FormatSuccess Tcp Test Succeeded.$FormatReset" 
+                    $IsSuccessful = $true 
+                } elseif (!$res.PingSucceeded) {
+                    $out += "$FormatError Ping and TCP test are FAILED.$FormatReset"
+                } else {
+                    $out += "$FormatError Tcp Test FAILED.$FormatReset" 
+                }
+            } elseif ($res.PingSucceeded) {
+                $out += "] $FormatSuccess Ping Succeeded.$FormatReset" 
+                $IsSuccessful = $true 
             }
         } catch {
             $out += "$FormatError $($Error[0].Exception.Message)$FormatReset"
@@ -92,6 +110,7 @@ do {
         Write-Host $out
     }
     $Repeat--
+    if (($UntilSuccess -and $IsSuccessful) -or ($Repeat -le 0 -and !$Infinite)) {break}
     $stayIn = ($Repeat -gt 0) -or $Infinite
     if ($stayIn) { Start-Sleep -Seconds $SleepSeconds }
 } while ($stayIn)
