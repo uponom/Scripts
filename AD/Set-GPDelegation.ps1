@@ -72,6 +72,11 @@ param(
 )
 
 
+if ($DelegatedOUDN -notlike "*$DomainDN") {
+    Write-Host "ERROR: The delegated OU `"$DelegatedOUDN`" is not in the current domain namespace ($DomainDN)." -ForegroundColor Red
+    exit 1
+}
+
 $GPModifyGroupDN = $GlobalDomainGroupsDN
 $GPModifyGroupDesc = 'Allows to Edit settings, Delete, Modify security on all GPOs in the domain'
 
