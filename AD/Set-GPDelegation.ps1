@@ -114,7 +114,7 @@ $path = "AD:\$GPOLinksModifyScope"
 $acl = Get-ACl -Path $path -ErrorAction Stop
 $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpOptions, $inheritanceType))
 $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpLink, $inheritanceType))
-"Assingning parmissions to $GPOLinksModifyGroup ..."
+"Assigning parmissions to $GPOLinksModifyGroup ..."
 Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop 
 
 # Configuring GPO RSoP Planning and Logging access group
@@ -124,7 +124,7 @@ $path = "AD:\$RsopGenerateScope"
 $acl = Get-ACl -Path $path -ErrorAction Stop
 $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPLogging, $inheritanceType))
 $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPPlanning, $inheritanceType))
-"Assingning parmissions to $RsopGenerateGroup ..."
+"Assigning parmissions to $RsopGenerateGroup ..."
 Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop 
 
 # Creation the role group for Group Policies Administrators
