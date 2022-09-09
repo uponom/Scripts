@@ -11,11 +11,16 @@
     Also will be created a group, which assigns "Group Policies Admins" role, which includes all permissions mentioned above.
 .PARAMETER DelegatedOUDN
     Distinguished Name of OU where GPO links management and RSoP generation has to be delegated.
-.PARAMETER DelegatedOUGroupsDN
-    The place to put GPOLinksModify and RSOPGenerate groups. It is usually inside of DelegatedOUDN.
-    "OU=Groups,$DelegatedOUDN" will be used, if omitted.     
-.PARAMETER GlobalDomainGroupsDN
-    The place to put GPModify and GPAdmins groups to. Will be used standard "Users" container in the root of the domain, if omitted. 
+.PARAMETER RolesGroupsDN
+    Path to OU where Role group will be stored.
+    If omitted, it will be set to "OU=Roles,$GroupsDN" (see "GroupsDN" parameter).
+.PARAMETER AccessGroupsDN
+    Path to OU where Access groups will be stored.
+    If omitted, it will be set to "OU=Access,$GroupsDN" (see "GroupsDN" parameter).
+.PARAMETER GroupsDN
+    Default base path (distinguished name) to "Role" and "Access" OUs.
+    If omitted, it will be set to "OU=Groups,$DomainDN" (where $DomainDN is DN of your domain).
+    The parameter will be ignored if -RolesGroupsDN and/or -AccessGroupsDN is set.
 .PARAMETER DomainDN
     Domain Distinguished Name. The current domain will be taken, if omitted.
 .PARAMETER GroupPolicyCreatorOwnersGroup
@@ -34,7 +39,7 @@
     If omitted, will be named "GroupPolicies_Admins".
 
 .NOTES
-    Version:        1.0
+    Version:        1.1
     Author:         Yurii Ponomarenko
   
 .EXAMPLE
@@ -54,8 +59,6 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$DelegatedOUDN,
     
-    [string]$DelegatedOUGroupsDN = "OU=Groups,$DelegatedOUDN",
-    
     [string]$GPModifyGroup = 'GroupPolicies_Modify',
     
     [string]$GPOLinksModifyGroup = "$(($DelegatedOUDN.Substring(0, $DelegatedOUDN.IndexOf(','))).Replace('=','_'))_GPOLinks_Manage",
@@ -66,31 +69,40 @@ param(
 
     [string]$DomainDN = ((Get-ADDomain -ErrorAction Stop).DistinguishedName),
 
-    [string]$GlobalDomainGroupsDN = ("CN=Users,$DomainDN"),
+    [string]$GroupsDN = ("OU=Groups,$DomainDN"),
+
+    [string]$RolesGroupsDN = ("OU=Roles,$GroupsDN"),
+
+    [string]$AccessGroupsDN = ("OU=Access,$GroupsDN"),
 
     [string]$GroupPolicyCreatorOwnersGroup = 'Group Policy Creator Owners' # Can be different in non-English AD
 )
 
-
-if ($DelegatedOUDN -notlike "*$DomainDN") {
-    Write-Host "ERROR: The delegated OU `"$DelegatedOUDN`" is not in the current domain namespace ($DomainDN)." -ForegroundColor Red
-    exit 1
+($DelegatedOUDN, $GroupsDN, $RolesGroupsDN, $AccessGroupsDN) | %{
+    if ($_ -notlike "*$DomainDN") {
+        Write-Host "ERROR: The OU `"$_`" is not in the current domain namespace ($DomainDN)." -ForegroundColor Red
+        exit 1
+    }
+    if (!(Test-Path "AD:\$_")) {
+        Write-Host "ERROR: The OU `"$_`" does not exist." -ForegroundColor Red
+        exit 2
+    }
 }
 
-$GPModifyGroupDN = $GlobalDomainGroupsDN
+$GPModifyGroupDN = $AccessGroupsDN # $GlobalDomainGroupsDN
 $GPModifyGroupDesc = 'Allows to Edit settings, Delete, Modify security on all GPOs in the domain'
 
-$GPOLinksModifyGroupDN = $DelegatedOUGroupsDN
+$GPOLinksModifyGroupPath = $AccessGroupsDN # $DelegatedOUGroupsDN
 $GPOLinksModifyGroupDesc = "Allows to create and remove link for GPOs in `"$DelegatedOUDN`""
 $GPOLinksModifyScope = $DelegatedOUDN
 
-$RsopGenerateGroupDN = $DelegatedOUGroupsDN
+$RsopGenerateGroupPath = $AccessGroupsDN # $DelegatedOUGroupsDN
 $RsopGenerateGroupDesc = "Allow to generate RSoP (planning and logging modes) in `"$DelegatedOUDN`""
 $RsopGenerateScope = $DelegatedOUDN
 
 $GPAdminsRoleGroupDesc = "Group Policies Administrators role group. Allows to Create/Modify/Delete all GPOs, Link/Unlink GPOs and generate RSoP on `"$DelegatedOUDN`"" 
 $GPAdminsRoleGroupMemberOf = @($GPModifyGroup, $GPOLinksModifyGroup, $RsopGenerateGroup, $GroupPolicyCreatorOwnersGroup)
-$GPAdminsRoleGroupDN = $GlobalDomainGroupsDN
+$GPAdminsRoleGroupDN = $RolesGroupsDN # $GlobalDomainGroupsDN
 
 $gRSOPLogging = [GUID]'b7b1b3de-ab09-4242-9e30-9980e5d322f7'
 $gRSOPPlanning = [GUID]'b7b1b3dd-ab09-4242-9e30-9980e5d322f7'
@@ -109,7 +121,7 @@ Set-GPPermission -All -TargetName $GPModifyGroup -TargetType Group -PermissionLe
 
 # Configuring GPO Links access group
 "Creation of $GPOLinksModifyGroup ..."
-$SID = (New-ADGroup -Name $GPOLinksModifyGroup -Description $GPOLinksModifyGroupDesc -Path $GPOLinksModifyGroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
+$SID = (New-ADGroup -Name $GPOLinksModifyGroup -Description $GPOLinksModifyGroupDesc -Path $GPOLinksModifyGroupPath -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
 $path = "AD:\$GPOLinksModifyScope"
 $acl = Get-ACl -Path $path -ErrorAction Stop
 $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpOptions, $inheritanceType))
@@ -119,7 +131,7 @@ Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop
 
 # Configuring GPO RSoP Planning and Logging access group
 "Creation of $RsopGenerateGroup ..."
-$SID = (New-ADGroup -Name $RsopGenerateGroup -Description $RsopGenerateGroupDesc -Path $RsopGenerateGroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
+$SID = (New-ADGroup -Name $RsopGenerateGroup -Description $RsopGenerateGroupDesc -Path $RsopGenerateGroupPath -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
 $path = "AD:\$RsopGenerateScope"
 $acl = Get-ACl -Path $path -ErrorAction Stop
 $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPLogging, $inheritanceType))
