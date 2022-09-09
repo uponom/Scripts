@@ -85,7 +85,7 @@ $GPOLinksModifyGroupDesc = "Allows to create and remove link for GPOs in `"$Dele
 $GPOLinksModifyScope = $DelegatedOUDN
 
 $RsopGenerateGroupDN = $DelegatedOUGroupsDN
-$RsopGenerateGroupDesc = "Allow to generate RSoP (planning and modeling modes) in `"$DelegatedOUDN`""
+$RsopGenerateGroupDesc = "Allow to generate RSoP (planning and logging modes) in `"$DelegatedOUDN`""
 $RsopGenerateScope = $DelegatedOUDN
 
 $GPAdminsRoleGroupDesc = "Group Policies Administrators role group. Allows to Create/Modify/Delete all GPOs, Link/Unlink GPOs and generate RSoP on `"$DelegatedOUDN`"" 
