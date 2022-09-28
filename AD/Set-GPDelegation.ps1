@@ -112,29 +112,29 @@ param(
 
 #region Vars
 
-$GPModifyGroupDN = $AccessGroupsDN
+$GPModifyGroupPath = $AccessGroupsDN
 $GPModifyGroupDesc = 'Allows to Edit settings, Delete, Modify security on all GPOs in the domain'
 
-$RootRsopGroupDN = $AccessGroupsDN
+$RootRsopGroupPath = $AccessGroupsDN
 $RootRsopGroupDesc = "Allow to generate RSoP (planning and logging modes) in `"$DomainDN`""
 
-$GPOLinksModifyGroupDN = $AccessGroupsDN
+$GPOLinksModifyGroupPath = $AccessGroupsDN
 $GPOLinksModifyGroupDesc = "Allows to create and remove link for GPOs in `"$DelegatedOUDN`""
 $GPOLinksModifyScope = $DelegatedOUDN
 
-$RsopGenerateGroupDN = $AccessGroupsDN
+$RsopGenerateGroupPath = $AccessGroupsDN
 $RsopGenerateGroupDesc = "Allow to generate RSoP (planning and logging modes) in `"$DelegatedOUDN`""
 $RsopGenerateScope = $DelegatedOUDN
 
-$GPAdminsRoleGroupDN = $RolesGroupsDN
+$GPAdminsRoleGroupPath = $RolesGroupsDN
 $GPAdminsRoleGroupDesc = "Group Policies Administrators role group. Allows to Create/Modify/Delete all GPOs and generate RSoP domain-wide" 
 $GPAdminsRoleGroupMemberOf = @($GPModifyGroup, $RootRsopGroup, $GroupPolicyCreatorOwnersGroup)
 
-$DelegatedFullAccessGroupDN = $AccessGroupsDN
+$DelegatedFullAccessGroupPath = $AccessGroupsDN
 $DelegatedFullAccessGroupDesc = "Full access over all AD objects in `"$DelegatedOUDN`""
 $DelegatedFullAccessGroupScope = $DelegatedOUDN
 
-$OUAdminsGroupDN = $RolesGroupsDN
+$OUAdminsGroupPath = $RolesGroupsDN
 $OUAdminsGroupDesc = "Full access over all AD objects (including RSoP and GPO-links) in `"$DelegatedOUDN`""
 $OUAdminsGroupMemberOf = @($GPOLinksModifyGroup, $RsopGenerateGroup, $DelegatedFullAccessGroup)
 
@@ -153,7 +153,7 @@ function Set-RsopDelegation {
     )]
     param (
         [string]$GroupName,
-        [string]$GroupDN,
+        [string]$GroupPath,
         [string]$GroupDesc,
         [string]$Scope
     )
@@ -165,170 +165,145 @@ function Set-RsopDelegation {
     $gRSOPLogging = [GUID]'b7b1b3de-ab09-4242-9e30-9980e5d322f7'
     $gRSOPPlanning = [GUID]'b7b1b3dd-ab09-4242-9e30-9980e5d322f7'
 
-    Write-Verbose "Creation of $GroupName ($GroupDN)..."
+    Write-Verbose "Creation of $GroupName ($GroupPath)..."
     try {
-        $SID = (New-ADGroup -Name $GroupName -Description $GroupDesc -Path $GroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop).SID
+        $SID = (New-ADGroup -Name $GroupName -Description $GroupDesc -Path $GroupPath -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
         $path = "AD:\$Scope"
         $acl = Get-ACl -Path $path -ErrorAction Stop
         $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPLogging, $inheritanceType))
         $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPPlanning, $inheritanceType))
         Write-Verbose "Assigning permissions to $GroupName ..."
         if($PSCmdlet.ShouldProcess($path, "Allow `"$GroupName`" to generate RSoP")) {
-            Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop
+            Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop | Out-Null
         }        
-    } catch {
-        $_.Exception.Message
-        return $false
+    } catch {        
+        return $_.Exception.Message
     }
-    return $true     
+    return $null     
 }
 
 function Set-GPOLinkManageDelegation {
-    <#
-    .SYNOPSIS
-        Creates AD group and delegates it an access to manage GPO-links for specified scope.
-    #>
-        [cmdletbinding(
-            SupportsShouldProcess
-        )]
-        param (
-            [string]$GroupName,
-            [string]$GroupDN,
-            [string]$GroupDesc,
-            [string]$Scope
-        )
-    
-        $gpOptions = [GUID]'f30e3bbf-9ff0-11d1-b603-0000f80367c1'
-        $gpLink = [GUID]'f30e3bbe-9ff0-11d1-b603-0000f80367c1'
-                
-        $type = [System.Security.AccessControl.AccessControlType]'Allow'
-        $inheritanceType = [System.DirectoryServices.ActiveDirectorySecurityInheritance]'All'
-    
-        Write-Verbose "Creation of $GroupName ($GroupDN)..."
-        try {
-            $SID = (New-ADGroup -Name $GroupName -Description $GroupDesc -Path $GroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop).SID
-            $path = "AD:\$Scope"
-            $acl = Get-ACl -Path $path -ErrorAction Stop
-            $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpOptions, $inheritanceType))
-            $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpLink, $inheritanceType))
-            Write-Verbose "Assigning permissions to $GroupName ..."
-            if($PSCmdlet.ShouldProcess($path, "Allow `"$GroupName`" to manage GPO-links")) {
-                Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop
-            }        
-        } catch {
-            $_.Exception.Message
-            return $false
-        }
-    return $true    
+<#
+.SYNOPSIS
+    Creates AD group and delegates it an access to manage GPO-links for specified scope.
+#>
+    [cmdletbinding(
+        SupportsShouldProcess
+    )]
+    param (
+        [string]$GroupName,
+        [string]$GroupPath,
+        [string]$GroupDesc,
+        [string]$Scope
+    )
+
+    $gpOptions = [GUID]'f30e3bbf-9ff0-11d1-b603-0000f80367c1'
+    $gpLink = [GUID]'f30e3bbe-9ff0-11d1-b603-0000f80367c1'
+            
+    $type = [System.Security.AccessControl.AccessControlType]'Allow'
+    $inheritanceType = [System.DirectoryServices.ActiveDirectorySecurityInheritance]'All'
+
+    Write-Verbose "Creation of $GroupName ($GroupPath)..."
+    try {
+        $SID = (New-ADGroup -Name $GroupName -Description $GroupDesc -Path $GroupPath -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
+        $path = "AD:\$Scope"
+        $acl = Get-ACl -Path $path -ErrorAction Stop
+        $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpOptions, $inheritanceType))
+        $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpLink, $inheritanceType))
+        Write-Verbose "Assigning permissions to $GroupName ..."
+        if($PSCmdlet.ShouldProcess($path, "Allow `"$GroupName`" to manage GPO-links")) {
+            Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop | Out-Null
+        }        
+    } catch {        
+        return $_.Exception.Message
+    }
+    return $null     
 }
 
 function Set-FullControllDelegation {
-    <#
-    .SYNOPSIS
-        Creates AD group and delegates it full control over all AD objects in specified scope.
-    #>
-        [cmdletbinding(
-            SupportsShouldProcess
-        )]
-        param (
-            [string]$GroupName,
-            [string]$GroupDN,
-            [string]$GroupDesc,
-            [string]$Scope
-        )
-                
-        $type = [System.Security.AccessControl.AccessControlType]'Allow'
-        $inheritanceType = [System.DirectoryServices.ActiveDirectorySecurityInheritance]'All'
+<#
+.SYNOPSIS
+    Creates AD group and delegates it full control over all AD objects in specified scope.
+#>
+    [cmdletbinding(
+        SupportsShouldProcess
+    )]
+    param (
+        [string]$GroupName,
+        [string]$GroupPath,
+        [string]$GroupDesc,
+        [string]$Scope
+    )
             
-        Write-Verbose "Creation of $GroupName ($GroupDN)..."
-        try {
-            $SID = (New-ADGroup -Name $GroupName -Description $GroupDesc -Path $GroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop).SID
-            $path = "AD:\$Scope"
-            $acl = Get-ACl -Path $path -ErrorAction Stop
-            $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $inheritanceType))
-            Write-Verbose "Assigning permissions to $GroupName ..."
-            if($PSCmdlet.ShouldProcess($path, "Allow `"$GroupName`" Full control")) {
-                Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop
-            }        
-        } catch {
-            $_.Exception.Message
-            return $false
-        }
-    return $true    
+    $type = [System.Security.AccessControl.AccessControlType]'Allow'
+    $inheritanceType = [System.DirectoryServices.ActiveDirectorySecurityInheritance]'All'
+        
+    Write-Verbose "Creation of $GroupName ($GroupPath)..."
+    try {
+        $SID = (New-ADGroup -Name $GroupName -Description $GroupDesc -Path $GroupPath -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
+        $path = "AD:\$Scope"
+        $acl = Get-ACl -Path $path -ErrorAction Stop
+        $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $inheritanceType))
+        Write-Verbose "Assigning permissions to $GroupName ..."
+        if($PSCmdlet.ShouldProcess($path, "Allow `"$GroupName`" Full control")) {
+            Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop | Out-Null
+        }        
+    } catch {        
+        return $_.Exception.Message
+    }
+    return $null     
 }
 
 #endregion Functions
 
 
 #region Configuring GP full control access group
-"Creation of $GPModifyGroup ($GPModifyGroupDN)..."
-New-ADGroup -Name $GPModifyGroup -Description $GPModifyGroupDesc -Path $GPModifyGroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop
+"Creation of $GPModifyGroup ($GPModifyGroupPath)..."
+New-ADGroup -Name $GPModifyGroup -Description $GPModifyGroupDesc -Path $GPModifyGroupPath -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop
 "Assingning GpoEditDeleteModifySecurity to $GPModifyGroup for all existing GPOs..."
 Set-GPPermission -All -TargetName $GPModifyGroup -TargetType Group -PermissionLevel GpoEditDeleteModifySecurity -ErrorAction Stop | Format-Table DisplayName, Owner
 #endregion Configuring GP full control access group
 
-if (!(Set-RsopDelegation -GroupName $RootRsopGroup -GroupDN $RootRsopGroupDN -GroupDesc $RootRsopGroupDesc -Scope $DomainDN)) {
-    Write-Host "ERROR: Cannot set a delegation. Terminating..."
+# Configuring domain root RSoP-generate access group
+$r = Set-RsopDelegation -GroupName $RootRsopGroup -GroupPath $RootRsopGroupPath -GroupDesc $RootRsopGroupDesc -Scope $DomainDN
+if (![string]::IsNullOrEmpty($r)) {
+    Write-Host "ERROR: Cannot setup a delegation: $r"
     exit 3
 }
-#region Configuring domain root RSoP-generate access group
-# "Creation of $RootRsopGroup ($RootRsopGroupDN)..."
-# $SID = (New-ADGroup -Name $RootRsopGroup -Description $RootRsopGroupDesc -Path $RootRsopGroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop).SID
-# $path = "AD:\$DomainDN"
-# $acl = Get-ACl -Path $path -ErrorAction Stop
-# $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPLogging, $inheritanceType))
-# $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPPlanning, $inheritanceType))
-# "Assigning parmissions to $RootRsopGroup ..."
-# Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop 
-#endregion Configuring domain root RSoP-generate access group
 
-if (!(Set-RsopDelegation -GroupName $RsopGenerateGroup -GroupDN $RsopGenerateGroupDN -GroupDesc $RsopGenerateGroupDesc -Scope $RsopGenerateScope)) {
-    Write-Host "ERROR: Cannot set a delegation. Terminating..."
+# Configuring GPO RSoP Planning and Logging access group
+$r = Set-RsopDelegation -GroupName $RsopGenerateGroup -GroupPath $RsopGenerateGroupPath -GroupDesc $RsopGenerateGroupDesc -Scope $RsopGenerateScope
+if (![string]::IsNullOrEmpty($r)) {
+    Write-Host "ERROR: Cannot setup a delegation: $r"
     exit 4
 }
-#region Configuring GPO RSoP Planning and Logging access group
-# "Creation of $RsopGenerateGroup ..."
-# $SID = (New-ADGroup -Name $RsopGenerateGroup -Description $RsopGenerateGroupDesc -Path $RsopGenerateGroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
-# $path = "AD:\$RsopGenerateScope"
-# $acl = Get-ACl -Path $path -ErrorAction Stop
-# $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPLogging, $inheritanceType))
-# $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, $adRights, $type, $gRSOPPlanning, $inheritanceType))
-# "Assigning parmissions to $RsopGenerateGroup ..."
-# Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop 
-#endregion Configuring GPO RSoP Planning and Logging access group
 
-if (!(Set-GPOLinkManageDelegation -GroupName $GPOLinksModifyGroup -GroupDN $GPOLinksModifyGroupDN -GroupDesc $GPOLinksModifyGroupDesc -Scope $GPOLinksModifyScope)) {
-    Write-Host "ERROR: Cannot set a delegation. Terminating..."
+# Configuring GPO Links access group
+$r = Set-GPOLinkManageDelegation -GroupName $GPOLinksModifyGroup -GroupPath $GPOLinksModifyGroupPath -GroupDesc $GPOLinksModifyGroupDesc -Scope $GPOLinksModifyScope
+if (![string]::IsNullOrEmpty($r)) {
+    Write-Host "ERROR: Cannot setup a delegation: $r"
     exit 5
 }
-#region Configuring GPO Links access group
-# "Creation of $GPOLinksModifyGroup ($GPOLinksModifyGroupDN)..."
-# $SID = (New-ADGroup -Name $GPOLinksModifyGroup -Description $GPOLinksModifyGroupDesc -Path $GPOLinksModifyGroupDN -GroupCategory Security -GroupScope DomainLocal -ErrorAction Stop -PassThru).SID
-# $path = "AD:\$GPOLinksModifyScope"
-# $acl = Get-ACl -Path $path -ErrorAction Stop
-# $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpOptions, $inheritanceType))
-# $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule $SID, 'GenericAll', $type, $gpLink, $inheritanceType))
-# "Assigning parmissions to $GPOLinksModifyGroup ..."
-# Set-ACL -Path $path -AclObject $acl -Passthru -ErrorAction Stop 
-#endregion Configuring GPO Links access group
+
+# Configuring Full control access group for the delegated OU
+$r = Set-FullControllDelegation -GroupName $DelegatedFullAccessGroup -GroupPath $DelegatedFullAccessGroupPath -GroupDesc $DelegatedFullAccessGroupDesc -Scope $DelegatedFullAccessGroupScope
+if (![string]::IsNullOrEmpty($r)) {
+    Write-Host "ERROR: Cannot setup a delegation: $r"
+    exit 6
+}
 
 #region Creation the role group for Group Policies Administrators
-"Creation of $GPAdminsRoleGroup ($GPAdminsRoleGroupDN)..."
-New-ADGroup -Name $GPAdminsRoleGroup -Description $GPAdminsRoleGroupDesc -Path $GPAdminsRoleGroupDN -GroupCategory Security -GroupScope Global -ErrorAction Stop #-PassThru
+"Creation of $GPAdminsRoleGroup ($GPAdminsRoleGroupPath)..."
+New-ADGroup -Name $GPAdminsRoleGroup -Description $GPAdminsRoleGroupDesc -Path $GPAdminsRoleGroupPath -GroupCategory Security -GroupScope Global -ErrorAction Stop
 $GPAdminsRoleGroupMemberOf | ForEach-Object { 
     "Adding $GPAdminsRoleGroup as a member of $_ ..."
     Add-ADGroupMember -Identity $_ -Members $GPAdminsRoleGroup -ErrorAction Stop 
 }
 #endregion Creation the role group for Group Policies Administrators
 
-if (!(Set-FullControllDelegation -GroupName $DelegatedFullAccessGroup -GroupDN $DelegatedFullAccessGroupDN -GroupDesc $DelegatedFullAccessGroupDesc -Scope $DelegatedFullAccessGroupScope)) {
-    Write-Host "ERROR: Cannot set a delegation. Terminating..."
-    exit 6
-}
-
 #region Creation the role group for Administrators of the delegated OU 
-"Creation of $OUAdminsGroup ($OUAdminsGroupDN)..."
-New-ADGroup -Name $OUAdminsGroup -Description $OUAdminsGroupDesc -Path $OUAdminsGroupDN -GroupCategory Security -GroupScope Global -ErrorAction Stop
+"Creation of $OUAdminsGroup ($OUAdminsGroupPath)..."
+New-ADGroup -Name $OUAdminsGroup -Description $OUAdminsGroupDesc -Path $OUAdminsGroupPath -GroupCategory Security -GroupScope Global -ErrorAction Stop
 $OUAdminsGroupMemberOf | ForEach-Object { 
     "Adding $OUAdminsGroup as a member of $_ ..."
     Add-ADGroupMember -Identity $_ -Members $OUAdminsGroup -ErrorAction Stop 
