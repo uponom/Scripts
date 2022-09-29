@@ -21,8 +21,11 @@
     If omitted, it will be set to "OU=Groups,$BaseDN".
     The parameter will be ignored if -RolesGroupsDN and/or -AccessGroupsDN is set.    
 .PARAMETER RolesGroupsDN
-    Path to OU where Role group will be stored.
+    Path to OU where Role groups will be stored.
     If omitted, it will be set to "OU=Roles,$GroupsDN" (see "GroupsDN" parameter).
+.PARAMETER RolesT2GroupsDN
+    Path to OU where "Tier2" Role groups (GPAuthorsRoleGroup, OUAdminsGroup) will be stored.
+    If omitted, it will be the same as RolesGroupsDN
 .PARAMETER AccessGroupsDN
     Path to OU where Access groups will be stored.
     If omitted, it will be set to "OU=Access,$GroupsDN" (see "GroupsDN" parameter).
@@ -45,7 +48,10 @@
     If omitted, "Global_RSoP_Generate" name will be used.
 .PARAMETER GPAdminsRoleGroup
     Name for the group which assigns Group Policies Admins role.
-    If omitted, will be named "GroupPolicies_Admins".
+    If omitted, will be named as "GroupPolicies_Admins".
+.PARAMETER GPAuthorsRoleGroup
+    Name of the group for assigning Group Policies Authors role, which provides permissions to create new GPO, modify your own GPOs and generate RSoP.   
+    If omitted, will be named as "GroupPolicy_Authors".
 .PARAMETER OUAdminsGroup
     Name for the group which assigns administrators role for the specified DelegatedOUDN.
     This role provides full access over all AD objects inside DelegatedOUDN, including RSoP generation and GPO-links manage.
@@ -83,6 +89,8 @@ param(
     
     [string]$GPAdminsRoleGroup = 'GroupPolicies_Admins',
 
+    [string]$GPAuthorsRoleGroup = 'GroupPolicy_Authors',
+
     [string]$RootRsopGroup = 'Global_RSoP_Generate',
 
     [string]$DomainDN = ((Get-ADDomain -ErrorAction Stop).DistinguishedName),
@@ -93,12 +101,14 @@ param(
 
     [string]$RolesGroupsDN = ("OU=Roles,$GroupsDN"),
 
+    [string]$RolesT2GroupsDN = $RolesGroupsDN,
+
     [string]$AccessGroupsDN = ("OU=Access,$GroupsDN"),
 
     [string]$GroupPolicyCreatorOwnersGroup = 'Group Policy Creator Owners' # Can be different in non-English AD
 )
 
-($DelegatedOUDN, $BaseDN, $GroupsDN, $RolesGroupsDN, $AccessGroupsDN) | ForEach-Object{
+($DelegatedOUDN, $BaseDN, $GroupsDN, $RolesGroupsDN, $AccessGroupsDN, $RolesT2GroupsDN) | ForEach-Object{
     if ($_ -notlike "*$DomainDN") {
         Write-Host "ERROR: The OU `"$_`" is not in the current domain namespace ($DomainDN)." -ForegroundColor Red
         exit 1
@@ -130,11 +140,15 @@ $GPAdminsRoleGroupPath = $RolesGroupsDN
 $GPAdminsRoleGroupDesc = "Group Policies Administrators role group. Allows to Create/Modify/Delete all GPOs and generate RSoP domain-wide" 
 $GPAdminsRoleGroupMemberOf = @($GPModifyGroup, $RootRsopGroup, $GroupPolicyCreatorOwnersGroup)
 
+$GPAuthorsRoleGroupPath = $RolesT2GroupsDN
+$GPAuthorsRoleGroupDesc = "Allows to create new GPO, modify your own GPOs and generate RSoP. " 
+$GPAuthorsRoleGroupMemberOf = @($RootRsopGroup, $GroupPolicyCreatorOwnersGroup)
+
 $DelegatedFullAccessGroupPath = $AccessGroupsDN
 $DelegatedFullAccessGroupDesc = "Full access over all AD objects in `"$DelegatedOUDN`""
 $DelegatedFullAccessGroupScope = $DelegatedOUDN
 
-$OUAdminsGroupPath = $RolesGroupsDN
+$OUAdminsGroupPath = $RolesT2GroupsDN
 $OUAdminsGroupDesc = "Full access over all AD objects (including RSoP and GPO-links) in `"$DelegatedOUDN`""
 $OUAdminsGroupMemberOf = @($GPOLinksModifyGroup, $RsopGenerateGroup, $DelegatedFullAccessGroup)
 
@@ -300,6 +314,15 @@ $GPAdminsRoleGroupMemberOf | ForEach-Object {
     Add-ADGroupMember -Identity $_ -Members $GPAdminsRoleGroup -ErrorAction Stop 
 }
 #endregion Creation the role group for Group Policies Administrators
+
+#region Creation the role group for Group Policies Authors
+"Creation of $GPAuthorsRoleGroup ($GPAuthorsRoleGroupPath)..."
+New-ADGroup -Name $GPAuthorsRoleGroup -Description $GPAuthorsRoleGroupDesc -Path $GPAuthorsRoleGroupPath -GroupCategory Security -GroupScope Global -ErrorAction Stop
+$GPAuthorsRoleGroupMemberOf | ForEach-Object { 
+    "Adding $GPAuthorsRoleGroup as a member of $_ ..."
+    Add-ADGroupMember -Identity $_ -Members $GPAuthorsRoleGroup -ErrorAction Stop 
+}
+#endregion Creation the role group for Group Policies Authors
 
 #region Creation the role group for Administrators of the delegated OU 
 "Creation of $OUAdminsGroup ($OUAdminsGroupPath)..."
