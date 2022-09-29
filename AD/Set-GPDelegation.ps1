@@ -57,7 +57,7 @@
     This role provides full access over all AD objects inside DelegatedOUDN, including RSoP generation and GPO-links manage.
 
 .NOTES
-    Version:        1.2
+    Version:        1.3
     Author:         Yurii Ponomarenko
   
 .EXAMPLE
