@@ -4,8 +4,10 @@
 .DESCRIPTION
     Script scans Active Directory domain for accounts (user or/and computer) where the attribute "lastLogontimestamp" have value older than current date minus specified number of days. Founded accounts can be disabled and moved to specified AD container.
 .VERSION
-    1.2
+    1.3
 .WHATS NEW
+    1.3
+        [+] Added the switch parameter "DisableNeverLoggedComputers" for disabling computer accounts who was created more than "MaxInactiveDays" days ago and had no one login
     1.2 
         [+] Added parameters "ExcludeComputersGroup" and "ExcludeUsersGroup". Members of these groups will be excluded from processing.
         [*] Fixed sorting in a report
@@ -15,7 +17,7 @@
 .PARAMETER Domain
     Active Directory domain name
 .PARAMETER MaxInactiveDays
-    Limit of inactivity period id days
+    Limit of inactivity period id days. If the parameter is ommitted 365 days period will be assigned.
 .PARAMETER UsersSearchBase
     Specifies an Active Directory path to search users' accounts under
 .PARAMETER DisabledUsersPath
@@ -42,6 +44,8 @@
     Process computers' accounts
 .PARAMETER DisableAccounts
     Accounts meet with the described criteria will be disabled.
+.PARAMETER DisableNeverLoggedComputers
+    Disables computer accounts who was created more than "MaxInactiveDays" days ago and had no one login
 .PARAMETER MoveAccounts
     Accounts meet with the described criteria will be moved. Users' accounts will be moved to path, specified by DisabledUsersPath parameter. Computers' accounts will be moved to path, specified by DisabledComputersPath parameter.
 .PARAMETER ExcludeComputersGroup
@@ -93,8 +97,11 @@ param(
     [switch]$ExtendedReport,
     [string]$ExcludeComputersGroup = '',
     [string]$ExcludeUsersGroup = '',
-    [string]$EmailComment = ''
+    [string]$EmailComment = '',
+    [switch]$DisableNeverLoggedComputers
 )
+
+$AccountNeverExpires = 9223372036854775807 # https://docs.microsoft.com/en-us/windows/win32/adschema/a-accountexpires
 
 function Write-Log {
     param(
@@ -109,15 +116,6 @@ function Write-Log {
 }
 
 function FormatResults ($Inp){
-<#
-    $Inp | select ObjectClass, SamAccountName, `
-                    @{n='Enabled';e={if ($_.ObjectClass -eq 'user') {(Get-ADUser $_.SamAccountName -Server $Domain).Enabled} elseif ($_.ObjectClass -eq 'computer') {(Get-ADComputer $_.SamAccountName -Server $Domain).Enabled} else {'N/A'} }}, `
-                    @{n='OriginalDN';e={$_.DistinguishedName}}, `
-                    @{n='CurrentDN';e={$SAN = $_.SamAccountName; (Get-ADObject -filter {SamAccountName -eq $SAN } -Server $Domain).DistinguishedName}}, `
-                    @{n='LastLogon';e={[datetime]::FromFileTime($_.LastLogonTimestamp)}}, `
-                    @{n='DayAgo';e={($CurrDate-[datetime]::FromFileTime($_.LastLogonTimestamp)).Days}} |
-                        sort ObjectClass, DayAgo
-#>
     [PSObject[]]$Result = $null
     foreach ($I in $Inp) {
         if ($I.ObjectClass -eq 'user') {
@@ -136,12 +134,11 @@ function FormatResults ($Inp){
             'CurrentDN' = (Get-ADObject -filter {SamAccountName -eq $SAN } -Server $Domain).DistinguishedName
             'LastLogon' = [datetime]::FromFileTime($I.LastLogonTimestamp)
             'DaysAgo' = ($CurrDate-[datetime]::FromFileTime($I.LastLogonTimestamp)).Days
+            'Created' = $I.whenCreated
         }
         if ($ExtendedReport) {
             if ($I.ObjectClass -eq 'user') {
-                #Write-host "$($I.SamAccountName) ==> $($I.accountExpires)" -foreground Green
-                #$ae = (Get-ADUser $I.SamAccountName -Server $Domain).accountExpires
-                if (($I.accountExpires -eq 9223372036854775807) -or ($I.accountExpires -eq $null)) {
+                if (($I.accountExpires -eq $AccountNeverExpires) -or ($I.accountExpires -eq $null)) {
                     $Expires = 'never'
                 } else {
                     $Expires = ([datetime]::FromFileTime($I.accountExpires)).ToShortDateString()
@@ -175,12 +172,12 @@ $strWhatIfMode = "*** WhatIf mode ***"
 $ExcludeComps = ListExceptions $ExcludeComputersGroup
 $ExcludeUsers = ListExceptions $ExcludeUsersGroup
 if ($ProcessComputers -and $ExcludeComps.Count -gt 0) {
-    Write-Log 'Computes which are listed below will be excluded from processing:'
-    $ExcludeComps | %{ Write-Log "`t- $_"}
+    Write-Log 'Computers are listed below will be excluded from processing:'
+    $ExcludeComps | ForEach-Object { Write-Log "`t- $_"}
 }
 if ($ProcessUsers -and $ExcludeUsers.Count -gt 0) {
-    Write-Log 'Users which are listed below will be excluded from processing:'
-    $ExcludeUsers | %{ Write-Log "`t- $_"}
+    Write-Log 'Users are listed below will be excluded from processing:'
+    $ExcludeUsers | ForEach-Object { Write-Log "`t- $_"}
 }
 $CurrDate = Get-Date
 $MaxAge = ($CurrDate).AddDays(-$MaxInactiveDays)
@@ -194,8 +191,8 @@ $SkippedComps = New-Object System.Collections.ArrayList
 
 if ($ProcessUsers) {
     Write-Log "DisableUsers switch is set"
-    Get-ADUser -Filter {LastLogonTimeStamp -lt $MaxAge -and Enabled -eq $true} -Server $Domain -Properties lastLogontimestamp, accountExpires -SearchBase $UsersSearchBase | # ?{($_.lastLogontimestamp -ne $null) -and ([datetime]::FromFileTime($_.lastLogontimestamp) -lt $MaxAge ) } | 
-        %{
+    Get-ADUser -Filter {LastLogonTimeStamp -lt $MaxAge -and Enabled -eq $true} -Server $Domain -Properties lastLogontimestamp, accountExpires, whenCreated -SearchBase $UsersSearchBase |
+        ForEach-Object {
             Write-Debug "$($_.name)`tlastLogontimestamp: $([datetime]::FromFileTime($_.lastLogontimestamp))`tMaxAge: $MaxAge"
             if ($_.SamAccountName -in $ExcludeUsers) {
                 Write-Log "[-] Skipped user:`t$($_.DistinguishedName)"
@@ -209,17 +206,19 @@ if ($ProcessUsers) {
 
 if ($ProcessComputers) {
     Write-Log "DisableComputers switch is set"
-    Get-ADComputer -Filter {LastLogonTimeStamp -lt $MaxAge -and Enabled -eq $true} -Server $Domain -Properties lastLogontimestamp -SearchBase $ComputersSearchBase | # ?{($_.lastLogontimestamp -ne $null) -and ([datetime]::FromFileTime($_.lastLogontimestamp) -lt $MaxAge ) } | 
-        %{
-            Write-Debug "$($_.name)`tlastLogontimestamp: $([datetime]::FromFileTime($_.lastLogontimestamp))`tMaxAge: $MaxAge"
-            if ($_.SamAccountName -in $ExcludeComps) {
-                Write-Log "[-] Skipped comp:`t$($_.DistinguishedName)"
-                $SkippedComps.Add($_) | Out-Null
-            } else {
-                Write-Log "[+] Found comp:`t$($_.DistinguishedName)"
-                $Accounts.Add($_) | Out-Null
-            }
-        }      
+
+    Get-ADComputer -Filter {Enabled -eq $true -and whenCreated -lt $MaxAge} -Properties lastLogontimestamp, whenCreated -SearchBase $ComputersSearchBase -Server $Domain |
+        Where-Object { ($_.LastLogonTimeStamp -ne $null -or $DisableNeverLoggedComputers) -and ([datetime]::FromFileTime($_.LastLogonTimeStamp) -lt $MaxAge) } |
+            ForEach-Object {
+                Write-Debug "$($_.name)`tlastLogontimestamp: $([datetime]::FromFileTime($_.lastLogontimestamp))`tMaxAge: $MaxAge`tCreated:$($_.whenCreated)"
+                if ($_.SamAccountName -in $ExcludeComps) {
+                    Write-Log "[-] Skipped:`t$($_.DistinguishedName)"
+                    $SkippedComps.Add($_) | Out-Null
+                } else {
+                    Write-Log "[+] Found:`t$($_.DistinguishedName)"
+                    $Accounts.Add($_) | Out-Null
+                }
+            }      
 }
 
 Write-Debug "Processing (disabling and moving)..."
@@ -302,64 +301,3 @@ TD{border-width: 1px;padding: 5px;border-style: solid;border-color: black;}
 } 
 
 Write-Log "*** Script finished ***"
-
-# SIG # Begin signature block
-# MIIKzgYJKoZIhvcNAQcCoIIKvzCCCrsCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
-# gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUgLbs8PPUmaiENb7h/e3rl+v7
-# 9Zigggc/MIIHOzCCBiOgAwIBAgIKPjsvgwAAAAABozANBgkqhkiG9w0BAQsFADBK
-# MRMwEQYKCZImiZPyLGQBGRYDTEFOMRYwFAYKCZImiZPyLGQBGRYGSE9NRTI0MRsw
-# GQYDVQQDExJIT01FMjQtRlBDLURDMDEtQ0EwHhcNMTgwNTI4MDg0MzQwWhcNMjIw
-# NjI5MjAxNTIyWjCBkjETMBEGCgmSJomT8ixkARkWA0xBTjEWMBQGCgmSJomT8ixk
-# ARkWBkhPTUUyNDEPMA0GA1UECxMGSE9NRTI0MQ0wCwYDVQQLEwR1c2VyMQswCQYD
-# VQQLEwJJVDEaMBgGA1UECwwRdGVzdF9IYW5nb3V0c0NoYXQxGjAYBgNVBAMTEVl1
-# cmlpIFBvbm9tYXJlbmtvMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA
-# nAnArMW46ndumw8D26xMN0EzqrZfy3jWpGbuErbvo104MFkA0M9B+YRBIBpg9pyc
-# jJHbD3gJt+DnL/PJvrlfQqNnBZ+0wamCjpZ3Fyxi4zZohJYR9U9luDxzLHlPTlVP
-# kDyCUWK/8BnjYI2F+PkICl439hLKIgJFNtgWjiqoqkkHcal5pmDHExvnPYN236e/
-# rLNy5QG4fMCeJVAMBEMxK3yqHVKHUabGuqoleXS+D0ZeENJjBv+dtwM69+IaOgbx
-# H9rsNg2NFIeqBSRPedZlEO4J6HHyOMEMZaOoJ7SalJzd6glX3TVyZg3oQ5kA9mKg
-# 17dG21qSzXbDZLQebzTpupyfF4cJzfgtuF5HKGJI+h1YUmxUkb88kzD4xq4p+6Ac
-# FMQCRNBdjNQ3epabsH6Y1/YYhYaKFQ7FHsjHpCLXcJK5IsL+Sdeos2JBToSCPS57
-# oY6SGLzoCgW+5a+3fL1ltjdwgQOeY+pOAavDMhdA1XD6gx98r0jttY4kQGkQb0FG
-# vtxOir+byCW8ylasybN81m6FlfrTjCtcTJk0hHVDXyAnKwitLwVubk4igzh3gdY+
-# Oe4qaOXu27crd8gHpBShl82OxGlT8dSA3+CG4r39iVBN2SfDYxUQ4CgvH/yTr5pq
-# 8QsfmmrODYQQ4NeZ93mUExvhA5vgZGfh7E+Ac5JYT5ECAwEAAaOCAtgwggLUMD0G
-# CSsGAQQBgjcVBwQwMC4GJisGAQQBgjcVCIKe4wCE4OtDhbGPLoLe9wOFkbFkgSCr
-# +ACHtK9ZAgFkAgEDMBMGA1UdJQQMMAoGCCsGAQUFBwMDMA4GA1UdDwEB/wQEAwIH
-# gDAbBgkrBgEEAYI3FQoEDjAMMAoGCCsGAQUFBwMDMB0GA1UdDgQWBBR+J9qFfyQ6
-# OUAFeor4elWZLMMrgjAfBgNVHSMEGDAWgBT5txsgAMNmojURI9R4BRyOej9UNzCC
-# AREGA1UdHwSCAQgwggEEMIIBAKCB/aCB+oaBuWxkYXA6Ly8vQ049SE9NRTI0LUZQ
-# Qy1EQzAxLUNBLENOPUZQQy1EQzAxLENOPUNEUCxDTj1QdWJsaWMlMjBLZXklMjBT
-# ZXJ2aWNlcyxDTj1TZXJ2aWNlcyxDTj1Db25maWd1cmF0aW9uLERDPUhPTUUyNCxE
-# Qz1MQU4/Y2VydGlmaWNhdGVSZXZvY2F0aW9uTGlzdD9iYXNlP29iamVjdENsYXNz
-# PWNSTERpc3RyaWJ1dGlvblBvaW50hjxodHRwOi8vZnBjLWRjMDEuaG9tZTI0Lmxh
-# bi9DZXJ0RW5yb2xsL0hPTUUyNC1GUEMtREMwMS1DQS5jcmwwgcMGCCsGAQUFBwEB
-# BIG2MIGzMIGwBggrBgEFBQcwAoaBo2xkYXA6Ly8vQ049SE9NRTI0LUZQQy1EQzAx
-# LUNBLENOPUFJQSxDTj1QdWJsaWMlMjBLZXklMjBTZXJ2aWNlcyxDTj1TZXJ2aWNl
-# cyxDTj1Db25maWd1cmF0aW9uLERDPUhPTUUyNCxEQz1MQU4/Y0FDZXJ0aWZpY2F0
-# ZT9iYXNlP29iamVjdENsYXNzPWNlcnRpZmljYXRpb25BdXRob3JpdHkwNgYDVR0R
-# BC8wLaArBgorBgEEAYI3FAIDoB0MG3l1cmlpLnBvbm9tYXJlbmtvQGhvbWUyNC5k
-# ZTANBgkqhkiG9w0BAQsFAAOCAQEAKjUiMzO4ZMECYjavWwPk8Conw0Ye9Jbex/yD
-# qFtIUllpRpArN505Mvj3qVrkz8F6bpKVzCa4vmqFR7G9wmtsWnIK+OOcXtdVGr+0
-# J7/ZD2pMZUVoGgHIiw3MCli48vbNTjHpKuLGjyFEtlKvbWWQyB6pRpZ0ZF4MES71
-# lh+TMhvA7D1KKf2+cXlrd1Y5qqjtCMgYkhT/dheHkVJ8+tesnHkRA6BAmZpTmaYv
-# exMFlE6PY5YGYcbVgqDE+ZzOz34YLlDjJ6at7FygfSADt8i3zYtvs87YeXBB+yHK
-# 3dU67MUsllvJzfKIEBVGK39a8ULjZeJf92FKSjKuTyERPnSo3TGCAvkwggL1AgEB
-# MFgwSjETMBEGCgmSJomT8ixkARkWA0xBTjEWMBQGCgmSJomT8ixkARkWBkhPTUUy
-# NDEbMBkGA1UEAxMSSE9NRTI0LUZQQy1EQzAxLUNBAgo+Oy+DAAAAAAGjMAkGBSsO
-# AwIaBQCgeDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkGCSqGSIb3DQEJAzEM
-# BgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEEAYI3AgEVMCMGCSqG
-# SIb3DQEJBDEWBBR0rtVnCrISWhK5hZKbodznpDTRQzANBgkqhkiG9w0BAQEFAASC
-# AgBNuJkGza74AuhCerkcedr6F/DNt+3UxpHuEwd52KLwjQX3sZKhK6i6bcP1SoP9
-# Cx7SIRWMKMyIPM8mhRZkSNRmLP3fMl76snA4Ef6iocXrgwJSz4uEOCqyR8ajRZJb
-# x4oqRsaHpctf2d6YFLWY6KUz/XtQkk14gGsQ6t4/wnxW6vk1Dk051TeAkpd9OAD9
-# Xc5nLQSQpvqO0kPMY/E1fr8BgGhqLD4I4nnUV3anqJXN1SguQ/kdhgZVExF4x7Rc
-# WAlC89Xl4rb8HfIZ5o7ZyCQ6CoD4IVfr7cGAVHdc0qnoENNt1Chjv3jX/vY5LoSp
-# cqPkZataPi9LM4l0QlNLQkrPo8vSfT7loWrmugnUWaXGaKraegpHf0DfA6qPG8Bo
-# Ejo+EI3xaV+HlG8M00Ll557ygshrrQxgt3TPnzt7M5JBVtuyBoF6dkj8Rm1th/MI
-# IDtirkJW1L7JvQyluKK2WaCfGYC8Y1POraXGGC+SoxzhABEsV9mTDKd3dl0hItQk
-# ZF7jyXsDjch6VufUQT8EcD87C89dfF1OlDP+GUtsWHDzdNKX36px3An2dyY+0jE0
-# n4dIuqfr9IPw+hee2v9xkGcRfDdwDJAen8C1pXvFgwn+zFyURNXb34oXR1+f2sMd
-# GsLik/dvzjntTlFwSE6uKgEdTEMKA4x3pGbd3o25Zs9d+Q==
-# SIG # End signature block
