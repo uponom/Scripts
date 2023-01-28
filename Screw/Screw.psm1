@@ -304,7 +304,7 @@ function Write-Log {
         .PARAMETER TimestampFormat
             The output message Timestamp format.
             See https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/get-date?view=powershell-7#notes for details.
-            Default value is %Y.%m.%d %H:%M:%S
+            Default value implements ISO 8601 standard: %Y-%m-%dT%H:%M:%S%Z
 
         .PARAMETER Encoding
             The output log file encoding.
@@ -319,7 +319,7 @@ function Write-Log {
         [string]$Message, 
         [string]$FilePath = '',
         [int]$Category = 0, # 0 - info, 1 - Warn, 2 - Error, 100 - Critical error (terminate program)
-        [string]$TimestampFormat = '%Y.%m.%d %H:%M:%S',
+        [string]$TimestampFormat = '%Y-%m-%dT%H:%M:%S%Z',
         [switch]$NoWriteHost,
         [string]$Encoding = 'default'
     )
