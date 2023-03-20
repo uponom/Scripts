@@ -1,69 +1,80 @@
 ﻿<#
 .SYNOPSIS
-    Disable users' or/and computers' accounts in Active Directory which have been inactive during period of time
+    Disable users' or/and computers' accounts in Active Directory which have been inactive during period of time.
 .DESCRIPTION
     Script scans Active Directory domain for accounts (user or/and computer) where the attribute "lastLogontimestamp" have value older than current date minus specified number of days. Founded accounts can be disabled and moved to specified AD container.
-.VERSION
+.NOTES
+    Version: 1.5
+    
+    What's new:
+    1.5
+        [+] Added support of AzureAD: checks ApproximateLastSignInDateTime attribute of devices as an additional check for hybrid-joined computers.
     1.3
-.WHATS NEW
-    1.3
-        [+] Added the switch parameter "DisableNeverLoggedComputers" for disabling computer accounts who was created more than "MaxInactiveDays" days ago and had no one login
+        [+] Added the switch parameter "DisableNeverLoggedComputers" for disabling computer accounts who was created more than "MaxInactiveDays" days ago and had no one login.
     1.2 
         [+] Added parameters "ExcludeComputersGroup" and "ExcludeUsersGroup". Members of these groups will be excluded from processing.
-        [*] Fixed sorting in a report
-        [*] Fixed account type in a report for user accounts
+        [*] Fixed sorting in a report.
+        [*] Fixed account type in a report for user accounts.
     1.1
-        [+] Added switch "ExtendedReport" - for display when an user account was expired
+        [+] Added switch "ExtendedReport" - for display when an user account was expired.
+
+    To do:
+        - Unattended login to AzureAD (Connect-MgGraph).
+        - Support of Baramundi: checks of the last login and a list devices with the same serial number.
 .PARAMETER Domain
-    Active Directory domain name
+    Active Directory domain name.
 .PARAMETER MaxInactiveDays
     Limit of inactivity period id days. If the parameter is ommitted 365 days period will be assigned.
 .PARAMETER UsersSearchBase
-    Specifies an Active Directory path to search users' accounts under
+    Specifies an Active Directory path to search users' accounts under.
 .PARAMETER DisabledUsersPath
-    Specifies an Active Directory path to move users' accounts into
+    Specifies an Active Directory path to move users' accounts into.
 .PARAMETER ComputersSearchBase
-    Specifies an Active Directory path to search computers' accounts under
+    Specifies an Active Directory path to search computers' accounts under.
 .PARAMETER DisabledComputersPath
-    Specifies an Active Directory path to move computers' accounts into
+    Specifies an Active Directory path to move computers' accounts into.
 .PARAMETER MailReport
-    Send mail report
+    Send mail report.
 .PARAMETER MailFrom
-    Specifies the address from which the mail is sent
+    Specifies the address from which the mail is sent.
 .PARAMETER MailTo
-    Specifies the addresses to which the mail is sent
+    Specifies the addresses to which the mail is sent.
 .PARAMETER SmtpServer
-    Specifies the name of the SMTP server that sends the email message
+    Specifies the name of the SMTP server that sends the email message.
 .PARAMETER ExportReportPath
-    Specifies path to report file. If ommited - report won't be exported to file
+    Specifies path to report file. If ommited - report won't be exported to file.
 .PARAMETER LogFile
     Specifies path to log file. By default log file will be created in temporary directory (%temp%) with name DisableInactiveADAccounts.log
 .PARAMETER ProcessUsers
-    Process users' accounts
+    Process users' accounts.
 .PARAMETER ProcessComputers
-    Process computers' accounts
+    Process computers' accounts.
 .PARAMETER DisableAccounts
     Accounts meet with the described criteria will be disabled.
 .PARAMETER DisableNeverLoggedComputers
-    Disables computer accounts who was created more than "MaxInactiveDays" days ago and had no one login
+    Disables computer accounts who was created more than "MaxInactiveDays" days ago and had no one login.
 .PARAMETER MoveAccounts
     Accounts meet with the described criteria will be moved. Users' accounts will be moved to path, specified by DisabledUsersPath parameter. Computers' accounts will be moved to path, specified by DisabledComputersPath parameter.
 .PARAMETER ExcludeComputersGroup
-    Accounts of computers which are members of this group will be excluded from processing (won't be disabled in any case)
+    Accounts of computers which are members of this group will be excluded from processing (won't be disabled in any case).
     NOTE: No nested groups allowed!
 .PARAMETER ExcludeUsersGroup
     Accounts of users which are members of this group will be excluded from processing (won't be disabled in any case)
     NOTE: No nested groups allowed!
 .PARAMETER ExtendedReport
-    Show an additional information about accounts
+    Show an additional information about accounts.
 .PARAMETER EmailComment
     Add extra comment to the report email. Just put here any additional info that will be sent along with an email body (at the top of it).
+.PARAMETER CheckAzureAD
+    Request last computer activity information from AzureAD for an additional check. Accounts will not be disabled if ApproximateLastSignInDateTime is newer that MaxInactiveDays threshold.
+.PARAMETER IgnoreAADMissedDevices
+    If IgnoreAADMissedDevices and CheckAzureAD parameters are set, the script will not disable computer accounts if they absent in AzureAD.
 .PARAMETER Verbose
-    Enable verbose output
+    Enable verbose output.
 .PARAMETER Debug
-    Enable extended debug output
+    Enable extended debug output.
 .PARAMETER WhatIf
-    Enable read-only mode
+    Enable read-only mode.
 .EXAMPLE
     DisableInactiveAccounts.ps1 -Domain "contoso.local" -MaxInactiveDays 60 -ProcessUsers -UsersSearchBase "OU=CompanyUsers,DC=contoso,DC=local" -DisableAccounts
     Script will scan users' accounts in OU "CompanyUsers" and disable acconts which are inactive more then 60 day
@@ -98,10 +109,19 @@ param(
     [string]$ExcludeComputersGroup = '',
     [string]$ExcludeUsersGroup = '',
     [string]$EmailComment = '',
-    [switch]$DisableNeverLoggedComputers
+    [switch]$DisableNeverLoggedComputers,
+
+    # [switch]$CheckBaramundi,
+    # [string]$BaramundiServer,
+    # [string]$BaramundiUser,
+    [switch]$CheckAzureAD,
+    [switch]$IgnoreAADMissedDevices
+    
 )
 
 $AccountNeverExpires = 9223372036854775807 # https://docs.microsoft.com/en-us/windows/win32/adschema/a-accountexpires
+
+# $BaramundiConnectCredentialsPrompt = 'Connecting to Baramundi server'
 
 function Write-Log {
     param(
@@ -113,6 +133,22 @@ function Write-Log {
     if (![string]::IsNullOrEmpty($FilePath)) {
         $Str | Out-File -LiteralPath $FilePath -Encoding default -Append -Force
     }
+}
+
+function AADDeviceShouldBeSkipped {
+    param (
+        [string]$DeviceName,
+        [datetime]$MaxAge,
+        [switch]$IgnoreAADMissedDevices
+    )
+    try {
+        $dd = @(Get-MgDevice -ErrorAction Stop -Filter "DisplayName eq '$DeviceName'")
+        if ($dd.Count -lt 1) { return $IgnoreAADMissedDevices }
+        return ( @($dd.ApproximateLastSignInDateTime | Sort-Object -Descending)[0] -ge $MaxAge )
+    } catch {
+        Write-Host "Error getting `"$DeviceName`" device data from AAD: $($Error[0].Exception.Message)" -ForegroundColor Red
+        return $True
+    }    
 }
 
 function FormatResults ($Inp){
@@ -138,7 +174,7 @@ function FormatResults ($Inp){
         }
         if ($ExtendedReport) {
             if ($I.ObjectClass -eq 'user') {
-                if (($I.accountExpires -eq $AccountNeverExpires) -or ($I.accountExpires -eq $null)) {
+                if (($I.accountExpires -eq $AccountNeverExpires) -or ($null -eq $I.accountExpires)) {
                     $Expires = 'never'
                 } else {
                     $Expires = ([datetime]::FromFileTime($I.accountExpires)).ToShortDateString()
@@ -150,7 +186,7 @@ function FormatResults ($Inp){
         }
         $Result += New-Object –TypeName PSObject –Prop $Properties
     }
-    $Result | sort Class, DaysAgo
+    $Result | Sort-Object Class, DaysAgo
 }
 
 function ListExceptions ( $ADGroupName ) {
@@ -169,6 +205,16 @@ function ListExceptions ( $ADGroupName ) {
 #if ($Debug) {$DebugPreference = 'Continue'}
 
 $strWhatIfMode = "*** WhatIf mode ***"
+
+# Connect to Baramundi server
+# TO DO: Check if Baramundi module is presented
+# Install-Module -Name bConnect
+# if ($CheckBaramundi) { 
+#     Reset-bConnect
+#     $BaramundiApiCred = Get-Credential -Message $BaramundiConnectCredentialsPrompt -UserName $BaramundiUser
+#     Initialize-bConnect -Server $BaramundiServer -Credentials $BaramundiApiCred
+# }
+
 $ExcludeComps = ListExceptions $ExcludeComputersGroup
 $ExcludeUsers = ListExceptions $ExcludeUsersGroup
 if ($ProcessComputers -and $ExcludeComps.Count -gt 0) {
@@ -221,10 +267,33 @@ if ($ProcessComputers) {
             }      
 }
 
+if ($CheckAzureAD) {
+    # TO DO: Add check if the module istalled
+    # Install-Module Microsoft.Graph.Identity.DirectoryManagement -Scope CurrentUser
+    # Import-Module -Name Microsoft.Graph.Identity.DirectoryManagement
+    #######Connect-MSGraph
+    
+    Connect-MgGraph 
+    # TO DO: Request credentials by the script parameters
+    # TO DO: Check if login error
+    
+    Write-Host "$($Accounts.Count) to be disabled found. Checking against AAD activity..."
+
+    for ($i = 0; $i -lt $Accounts.Count; $i++) {
+        if ((AADDeviceShouldBeSkipped $Accounts[$i].name $MaxAge $IgnoreAADMissedDevices)) {
+            Write-Host "$($Accounts[$i].name) skipped by recent activity in AAD" -ForegroundColor Cyan
+            $Accounts[$i].Enabled = $false # Initially all elements have Enabled=$true. Setting this attribute to $false, we skipping the account from real disabling.
+        }
+    }
+
+    Write-Host "$(($Accounts | Where-Object Enabled -eq $True).Count) left after AAD check."
+}
+$Accounts | Where-Object Enabled -eq $True | Select-Object name
+
 Write-Debug "Processing (disabling and moving)..."
 $AccountsProcessed = New-Object System.Collections.ArrayList
 $AccountsErrors = New-Object System.Collections.ArrayList
-foreach ($Acc in $Accounts) {
+foreach ($Acc in ($Accounts | Where-Object Enabled -eq $True)) {
     Write-Debug "Processing: $Acc"
     try {
         $ProcPhase = ''
