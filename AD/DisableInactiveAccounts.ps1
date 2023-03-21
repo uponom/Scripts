@@ -4,9 +4,13 @@
 .DESCRIPTION
     Script scans Active Directory domain for accounts (user or/and computer) where the attribute "lastLogontimestamp" have value older than current date minus specified number of days. Founded accounts can be disabled and moved to specified AD container.
 .NOTES
-    Version: 1.5
+    Version: 1.6
     
     What's new:
+    1.6
+        [*] Parameter "-Domain" is not mandatory anymore. By default it takes current AD domain.
+        [*] Parameter "-MaxInactiveDays" is not mandatory anymore. By default it is set to 365.
+        [*] Minor bugfixes
     1.5
         [+] Added support of AzureAD: checks ApproximateLastSignInDateTime attribute of devices as an additional check for hybrid-joined computers.
     1.3
@@ -83,12 +87,10 @@
     Script will scan, disable and move users' and computers' accounts which are inactive for 90 days, then send mail report
 #>
 
-#version 0.2
+[cmdletbinding()]
 
 param(
-    [PARAMETER(Mandatory=$True)]
-    [string]$Domain,
-    [PARAMETER(Mandatory=$True)]
+    [string]$Domain = ((Get-ADDomain -ErrorAction Stop).DNSRoot),
     [int]$MaxInactiveDays = 365,
     [switch]$DisableAccounts,
     [switch]$MoveAccounts,
@@ -228,7 +230,7 @@ if ($ProcessUsers -and $ExcludeUsers.Count -gt 0) {
 $CurrDate = Get-Date
 $MaxAge = ($CurrDate).AddDays(-$MaxInactiveDays)
 $Accounts = New-Object System.Collections.ArrayList
-Write-Debug "Log file path: $($LogFile)"
+Write-Verbose "Log file path: $($LogFile)"
 Write-Log "*** Script started ***"
 if ($WhatIf) {Write-Log $strWhatIfMode}
 Write-Log "Procesing domain $Domain"
@@ -236,7 +238,7 @@ $SkippedUsers = New-Object System.Collections.ArrayList
 $SkippedComps = New-Object System.Collections.ArrayList
 
 if ($ProcessUsers) {
-    Write-Log "DisableUsers switch is set"
+    Write-Log "ProcessUsers switch is set"
     Get-ADUser -Filter {LastLogonTimeStamp -lt $MaxAge -and Enabled -eq $true} -Server $Domain -Properties lastLogontimestamp, accountExpires, whenCreated -SearchBase $UsersSearchBase |
         ForEach-Object {
             Write-Debug "$($_.name)`tlastLogontimestamp: $([datetime]::FromFileTime($_.lastLogontimestamp))`tMaxAge: $MaxAge"
@@ -247,11 +249,12 @@ if ($ProcessUsers) {
                 Write-Log "[+] Found user:`t$($_.DistinguishedName)"
                 $Accounts.Add($_) | Out-Null
             }
-        }      
+        }
+    Write-Log "$($Accounts.Count) user accounts found."
 }
 
 if ($ProcessComputers) {
-    Write-Log "DisableComputers switch is set"
+    Write-Log "ProcessComputers switch is set"
 
     Get-ADComputer -Filter {Enabled -eq $true -and whenCreated -lt $MaxAge} -Properties lastLogontimestamp, whenCreated -SearchBase $ComputersSearchBase -Server $Domain |
         Where-Object { ($_.LastLogonTimeStamp -ne $null -or $DisableNeverLoggedComputers) -and ([datetime]::FromFileTime($_.LastLogonTimeStamp) -lt $MaxAge) } |
@@ -290,7 +293,7 @@ if ($CheckAzureAD) {
 }
 $Accounts | Where-Object Enabled -eq $True | Select-Object name
 
-Write-Debug "Processing (disabling and moving)..."
+# Write-Verbose "Processing (disabling and moving)..."
 $AccountsProcessed = New-Object System.Collections.ArrayList
 $AccountsErrors = New-Object System.Collections.ArrayList
 foreach ($Acc in ($Accounts | Where-Object Enabled -eq $True)) {
